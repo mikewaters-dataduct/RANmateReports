@@ -1,0 +1,416 @@
+/**
+ *
+ * @author zorana
+ */
+package chartstest;
+
+import java.io.*;
+import java.util.*;
+import java.lang.*;
+import java.awt.Color;
+import java.text.SimpleDateFormat;
+import java.awt.image.BufferedImage;
+import java.text.DecimalFormat;
+
+import java.io.IOException;
+import org.apache.pdfbox.pdmodel.*;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.multipdf.Overlay;
+import java.util.HashMap;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.pdfparser.PDFStreamParser;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+
+import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
+
+public class PdfReportWriter {
+	
+    private boolean custom = false;                 // currently ignored - indicates that this report is a custom report requested from the browser
+    private int subject = 1;                        // 1 = Site, 2 = Customer, 3 = Operator
+    private int intervalType = 1;                   // currently ignored -1 = Month, 2 = Year
+    private String interval = "1/1/19 - 30/1/19";   // from date, to date
+    private String month = "January";
+    private String year = "2019";
+    //private String subjectName = "NEO Bruntwood";    // currently only one -a list of 1 or more sites, or customers, but not a mix and match
+    private String subjectName = "15 Bishopsgate";    // currently only one -a list of 1 or more sites, or customers, but not a mix and match    
+    private long voiceCallsNum = 24567L;             // number of calls
+    private int downloadNumGb = 52;                  // number of Gigabytes. Anything less than 1 will be displayed as < 1                         
+    private int uploadNumGb = 15;                    // number of Gigabytes. Anything less than 1 will be displayed as < 1                         
+    private String availabilityString = "excellent";
+    private float[] availability;                    // currently ignored - CIS values using Vladimir’s views, in V, O, T, E order. Any non-existing operator will be -1.0f
+    private String reportName = "StrattoOpenCell Service Report - NEO Bruntwood 201901 January.pdf";
+    private Color openCellFontBlue;
+    private Color openCellFontGrey;
+        
+    public PdfReportWriter (boolean custom, int subject, int intervalType, String interval, String month, String year, String subjectName,
+                             long voiceCallsNum, int downloadNumGb, int uploadNumGb, String availabilityString, float[] availability, String reportName) {
+        this.custom = custom;
+        this.subject = subject;
+        this.intervalType = intervalType;
+        this.interval = interval;
+        this.month = month;
+        this.year = year;
+        this.subjectName = subjectName;
+        this.voiceCallsNum = voiceCallsNum;
+        this.downloadNumGb = downloadNumGb;
+        this.uploadNumGb = uploadNumGb;
+        this.availabilityString = availabilityString;
+        this.availability = availability;     
+        this.reportName = reportName;
+        this.openCellFontBlue = new Color (51, 71, 109);
+        this.openCellFontGrey = new Color (89,89, 89);
+    }
+    
+    public PdfReportWriter() {
+        this.openCellFontBlue = new Color (51, 71, 109);
+        this.openCellFontGrey = new Color (89,89, 89);       
+    }
+    
+    public boolean createReport(){
+        boolean success = false;
+        PDPageContentStream contentPage1 = null;
+        PDPageContentStream contentPage2 = null;
+        PDPageContentStream contentPage3 = null;
+        PDPageContentStream contentPage4 = null;
+        PDPageContentStream contentPage5 = null;
+        Overlay overlay = null;
+        PDDocument openCellDocument = null;
+        try {
+            //System.out.println("PDF Creation Started");        
+            //OpenCell Report
+            openCellDocument = new PDDocument();
+            //Century Gothic font
+            PDFont fontCG = PDTrueTypeFont.loadTTF(openCellDocument, new File(PDFReportCreator.REPORT_TEMPLATE_DIR + "century"));
+            String imagesDir = "";
+            switch(subject) {
+                case 1:
+                    imagesDir = PDFReportCreator.REPORT_DIR + "sites/" + subjectName + "/";
+                    break;
+                case 2:
+                    imagesDir = PDFReportCreator.REPORT_DIR + "customers/" + subjectName + "/";
+                    break;
+                case 3:
+                    imagesDir = PDFReportCreator.REPORT_DIR + "operators/" + subjectName + "/";
+                    break;
+                default:
+                    imagesDir = PDFReportCreator.REPORT_DIR + "sites/" + subjectName + "/";
+            }
+
+            //Page 1, custom size to match current OpenCell Report - landscape, widescreen 16:9
+            PDPage openCellPage1 = new PDPage(new PDRectangle(PDRectangle.A4.getHeight()*(1.14f), (PDRectangle.A4.getHeight()*(1.14f)*9/16)));
+            openCellDocument.addPage(openCellPage1);
+       
+            contentPage1 = new PDPageContentStream(openCellDocument, openCellPage1);
+
+            contentPage1.beginText();
+            contentPage1.setFont(fontCG, 48);
+            contentPage1.setNonStrokingColor(this.openCellFontGrey);
+            contentPage1.moveTextPositionByAmount(100, 380);
+            contentPage1.drawString("StrattoOpencell Service Report");
+            contentPage1.endText();
+
+            contentPage1.beginText();
+            contentPage1.setFont(fontCG, 48);
+            contentPage1.setNonStrokingColor(this.openCellFontGrey);
+            contentPage1.moveTextPositionByAmount(100, 320);
+            contentPage1.drawString(month + " " + year);
+            contentPage1.endText();
+
+            contentPage1.beginText();
+            contentPage1.setFont(fontCG, 36);
+            contentPage1.setNonStrokingColor(this.openCellFontGrey);
+            contentPage1.moveTextPositionByAmount(100, 180);
+            contentPage1.drawString(subjectName);
+            contentPage1.endText();
+
+            //date
+            Date today = Calendar.getInstance().getTime();
+            // print out today's date
+            String date = new SimpleDateFormat("dd/MM/yy").format(new Date());
+            contentPage1.beginText();
+            contentPage1.setFont(fontCG, 10);
+            contentPage1.setNonStrokingColor(Color.WHITE);
+            contentPage1.moveTextPositionByAmount(29, 20);
+            contentPage1.drawString(date);
+            contentPage1.endText();       
+                
+            //page number
+            contentPage1.beginText();
+            contentPage1.setFont(fontCG, 10);
+            contentPage1.setNonStrokingColor(Color.WHITE);
+            contentPage1.moveTextPositionByAmount(925, 20);
+            contentPage1.drawString("1");
+            contentPage1.endText();  
+        
+            // Make sure that the content stream is closed:
+            contentPage1.close();
+            //System.out.println("PDF Creation Page 1 done");
+
+            //Page 2, custom size to match current OpenCell Report - landscape, widescreen 16:9
+            PDPage openCellPage2 = new PDPage(new PDRectangle(PDRectangle.A4.getHeight()*(1.14f), (PDRectangle.A4.getHeight()*(1.14f)*9/16)));
+            openCellDocument.addPage(openCellPage2);
+        
+            contentPage2 = new PDPageContentStream(openCellDocument, openCellPage2);    
+
+            //Page 2 Title 
+            contentPage2.beginText();
+            contentPage2.setFont(fontCG, 36);
+            contentPage2.setNonStrokingColor(openCellFontBlue);
+            contentPage2.moveTextPositionByAmount(31, 467);
+            contentPage2.drawString("Traffic Statistics – Voice Calls");
+            contentPage2.endText();
+
+        
+            //Comment
+            contentPage2.beginText();
+            contentPage2.setFont(fontCG, 20);
+            contentPage2.setNonStrokingColor(openCellFontGrey);
+            contentPage2.moveTextPositionByAmount(45, 432);
+            String strVoiceCalls = DecimalFormat.getNumberInstance().format(voiceCallsNum);
+            contentPage2.drawString("\u2022" + strVoiceCalls + " total number of calls (" + interval+ "" +")");
+            contentPage2.endText();                
+                
+               
+            // print out today's date
+            contentPage2.beginText();
+            contentPage2.setFont(fontCG, 10);
+            contentPage2.setNonStrokingColor(Color.WHITE);
+            contentPage2.moveTextPositionByAmount(29, 20);
+            contentPage2.drawString(date);
+            contentPage2.endText();       
+                
+            //page number
+            contentPage2.beginText();
+            contentPage2.setFont(fontCG, 10);
+            contentPage2.setNonStrokingColor(Color.WHITE);
+            contentPage2.moveTextPositionByAmount(925, 20);
+            contentPage2.drawString("2");
+            contentPage2.endText();       
+
+            //drawImage 1 - Bar Chart
+            PDImageXObject imageBar = PDImageXObject.createFromFile(imagesDir+ "TotalNumCallsBarChart.png", openCellDocument);
+            float scaleBar = 0.75f;
+            contentPage2.drawImage(imageBar, 57, 63, imageBar.getWidth()*scaleBar, imageBar.getHeight()*scaleBar);
+
+            //drawImage 2 - Pie Chart
+            PDImageXObject imagePie = PDImageXObject.createFromFile(imagesDir+ "TotalNumCallsPieChart.png", openCellDocument);                
+            float scalePie = 0.75f;
+            contentPage2.drawImage(imagePie, 510, 64, imagePie.getWidth()*scalePie, imagePie.getHeight()*scalePie);
+ 
+            // Make sure that the content stream is closed:
+            contentPage2.close();
+            //System.out.println("PDF Creation Page 2 done");
+
+            //Page 3, custom size to match current OpenCell Report - landscape, widescreen 16:9
+            PDPage openCellPage3 = new PDPage(new PDRectangle(PDRectangle.A4.getHeight()*(1.14f), (PDRectangle.A4.getHeight()*(1.14f)*9/16)));
+            openCellDocument.addPage(openCellPage3);
+        
+            contentPage3 = new PDPageContentStream(openCellDocument, openCellPage3);
+
+            //Page 3 Title 
+            contentPage3.beginText();
+            contentPage3.setFont(fontCG, 36);
+            contentPage3.setNonStrokingColor(openCellFontBlue);
+            contentPage3.moveTextPositionByAmount(31, 467);
+            contentPage3.drawString("Traffic Statistics – Data Download");
+            contentPage3.endText();
+
+        
+            //Comment
+            contentPage3.beginText();
+            contentPage3.setFont(fontCG, 20);
+            contentPage3.setNonStrokingColor(openCellFontGrey);
+            contentPage3.moveTextPositionByAmount(45, 432);
+            if (downloadNumGb < 1) {
+                contentPage3.drawString("\u2022" + " < 1 GB data download (Web browsing, video streaming, file downloads " + interval + ")");
+            } else {
+                contentPage3.drawString("\u2022" + downloadNumGb + "GB data download (Web browsing, video streaming, file downloads " + interval + ")");                
+            }
+            contentPage3.endText();                
+                
+               
+            // print out today's date
+            contentPage3.beginText();
+            contentPage3.setFont(fontCG, 10);
+            contentPage3.setNonStrokingColor(Color.WHITE);
+            contentPage3.moveTextPositionByAmount(29, 20);
+            contentPage3.drawString(date);
+            contentPage3.endText();       
+                
+            //page number
+            contentPage3.beginText();
+            contentPage3.setFont(fontCG, 10);
+            contentPage3.setNonStrokingColor(Color.WHITE);
+            contentPage3.moveTextPositionByAmount(925, 20);
+            contentPage3.drawString("3");
+            contentPage3.endText();  
+
+            //drawImage 1 - Bar Chart
+            PDImageXObject imageBar2 = PDImageXObject.createFromFile(imagesDir + "DataInboundBarChart.png", openCellDocument);
+            contentPage3.drawImage(imageBar2, 57, 63, imageBar2.getWidth()*scaleBar, imageBar2.getHeight()*scaleBar);
+
+            //drawImage 2 - Pie Chart
+            PDImageXObject imagePie2 = PDImageXObject.createFromFile(imagesDir + "DataInboundPieChart.png", openCellDocument);                
+            contentPage3.drawImage(imagePie2, 510, 64, imagePie2.getWidth()*scalePie, imagePie2.getHeight()*scalePie);
+ 
+            // Make sure that the content stream is closed:
+            contentPage3.close();
+            //System.out.println("PDF Creation Page 3 done");
+
+            //Page 4, custom size to match current OpenCell Report - landscape, widescreen 16:9
+            PDPage openCellPage4 = new PDPage(new PDRectangle(PDRectangle.A4.getHeight()*(1.14f), (PDRectangle.A4.getHeight()*(1.14f)*9/16)));
+            openCellDocument.addPage(openCellPage4);
+        
+            contentPage4 = new PDPageContentStream(openCellDocument, openCellPage4);
+
+            //Page 4 Title 
+            contentPage4.beginText();
+            contentPage4.setFont(fontCG, 36);
+            contentPage4.setNonStrokingColor(openCellFontBlue);
+            contentPage4.moveTextPositionByAmount(31, 467);
+            contentPage4.drawString("Traffic Statistics – Data Upload");
+            contentPage4.endText();
+
+        
+            //Comment
+            contentPage4.beginText();
+            contentPage4.setFont(fontCG, 20);
+            contentPage4.setNonStrokingColor(openCellFontGrey);
+            contentPage4.moveTextPositionByAmount(45, 432);
+            if (downloadNumGb < 1) {
+                contentPage4.drawString("\u2022" + " < 1 GB data upload (Email sending, file uploads, WhatsApp etc " + interval + ")");
+            } else {
+                contentPage4.drawString("\u2022" + uploadNumGb + "GB data upload (Email sending, file uploads, WhatsApp etc " + interval + ")");
+            }
+            contentPage4.endText();                
+                
+               
+            // print out today's date
+            contentPage4.beginText();
+            contentPage4.setFont(fontCG, 10);
+            contentPage4.setNonStrokingColor(Color.WHITE);
+            contentPage4.moveTextPositionByAmount(29, 20);
+            contentPage4.drawString(date);
+            contentPage4.endText();       
+                
+            //page number
+            contentPage4.beginText();
+            contentPage4.setFont(fontCG, 10);
+            contentPage4.setNonStrokingColor(Color.WHITE);
+            contentPage4.moveTextPositionByAmount(925, 20);
+            contentPage4.drawString("4");
+            contentPage4.endText();       
+
+            //drawImage 1 - Bar Chart
+            PDImageXObject imageBar3 = PDImageXObject.createFromFile(imagesDir + "DataOutboundBarChart.png", openCellDocument);
+            contentPage4.drawImage(imageBar3, 67, 63, imageBar3.getWidth()*scaleBar, imageBar3.getHeight()*scaleBar);
+
+            //drawImage 2 - Pie Chart
+            PDImageXObject imagePie3 = PDImageXObject.createFromFile(imagesDir + "DataOutboundPieChart.png", openCellDocument);                
+            contentPage4.drawImage(imagePie3, 520, 63, imagePie3.getWidth()*scalePie, imagePie3.getHeight()*scalePie);
+ 
+            // Make sure that the content stream is closed:
+            contentPage4.close();
+            //System.out.println("PDF Creation Page 4 done");
+
+            /* Page5 WIP
+            //Page 5, custom size to match current OpenCell Report - landscape, widescreen 16:9
+            PDPage openCellPage5 = new PDPage(new PDRectangle(PDRectangle.A4.getHeight()*(1.14f), (PDRectangle.A4.getHeight()*(1.14f)*9/16)));
+            openCellDocument.addPage(openCellPage5);
+        
+            contentPage5 = new PDPageContentStream(openCellDocument, openCellPage5);
+
+            //Page 5 Title 
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 36);
+            contentPage5.setNonStrokingColor(openCellFontBlue);
+            contentPage5.moveTextPositionByAmount(31, 467);
+            contentPage5.drawString("Availability Statistics – " + month + " " + year);
+            contentPage5.endText();
+
+        
+            //Comment
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 16);
+            contentPage5.setNonStrokingColor(openCellFontGrey);
+            contentPage5.moveTextPositionByAmount(45, 432);
+            contentPage5.drawString("\u2022" + "Statistics from " + interval);
+            contentPage5.endText();                
+            //Comment
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 16);
+            contentPage5.setNonStrokingColor(openCellFontGrey);
+            contentPage5.moveTextPositionByAmount(45, 407);
+            contentPage5.drawString("\u2022" + "Availability " + availabilityString);
+            contentPage5.endText();                
+            //Comment
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 24);
+            contentPage5.setNonStrokingColor(Color.RED);
+            contentPage5.moveTextPositionByAmount(45, 375);
+            contentPage5.drawString("VF 99.96%");
+            contentPage5.endText();                
+          //Comment
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 24);
+            contentPage5.setNonStrokingColor(Color.BLUE);
+            contentPage5.moveTextPositionByAmount(45, 340);
+            contentPage5.drawString("O2 99.92%");
+            contentPage5.endText();                
+                     
+            // print out today's date
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 10);
+            contentPage5.setNonStrokingColor(Color.WHITE);
+            contentPage5.moveTextPositionByAmount(29, 20);
+            contentPage5.drawString(date);
+            contentPage5.endText();       
+                
+            //page number
+            contentPage5.beginText();
+            contentPage5.setFont(fontCG, 10);
+            contentPage5.setNonStrokingColor(Color.WHITE);
+            contentPage5.moveTextPositionByAmount(925, 20);
+            contentPage5.drawString("5");
+            contentPage5.endText();       
+
+            // Make sure that the content stream is closed:
+            contentPage5.close();
+            System.out.println("PDF Creation Page 5 done");*/
+
+            //Background, Header, Footer
+            HashMap<Integer, String> overlayGuide = new HashMap<Integer, String>();
+            for(int i=0; i<openCellDocument.getNumberOfPages(); i++){
+                overlayGuide.put(i+1, PDFReportCreator.REPORT_TEMPLATE_DIR + "OpenCellPageTemplate.pdf");
+            }
+        
+            overlay = new Overlay();
+            overlay.setInputPDF(openCellDocument);
+            overlay.setOverlayPosition(Overlay.Position.BACKGROUND);
+            overlay.overlay(overlayGuide);
+
+            File openCellFile = new File(imagesDir + reportName);
+            openCellDocument.save(openCellFile);
+            System.out.println("Report " + reportName + " completed");
+            success = true;
+        } catch (Exception e) {
+            System.out.println("\nError writing to PDF report " + reportName + ", " + e.getMessage() + "\n");
+            e.printStackTrace();
+        } finally {
+            try {
+                if (contentPage1 != null) contentPage1.close();
+                if (contentPage2 != null) contentPage2.close();
+                if (contentPage3 != null) contentPage3.close();
+                if (contentPage4 != null) contentPage4.close();
+                if (contentPage5 != null) contentPage5.close();
+                if (overlay != null) overlay.close();
+                openCellDocument.close();
+            } catch (Exception ie) {
+                System.out.println("Unable to close PDF report " + reportName + ", " + ie.getMessage());               
+            }
+        }
+        return success;
+    }          
+
+}

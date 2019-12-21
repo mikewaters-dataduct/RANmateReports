@@ -846,7 +846,9 @@ public class PdfReportWriter {
             siteCisPage.moveTextPositionByAmount(45, 375);
             //siteCisPage.drawString("O2 99.92%");
             if (siteCisValues.get(siteName)[0] > 0) {
-                siteCisPage.drawString("VF " + String.format("%.2f", siteCisValues.get(siteName)[0]) + "%");
+                String formattedCIS = String.format("%.2f", siteCisValues.get(siteName)[0]);
+                siteCisPage.drawString("VF " + formattedCIS + "%");
+                System.out.println(month + " " + siteName + " CIS VF = " + formattedCIS + "%");
             } else {
                 siteCisPage.drawString("VF");                
             }
@@ -857,7 +859,9 @@ public class PdfReportWriter {
             siteCisPage.setNonStrokingColor(PDFReportCreator.opcoColours[1]);
             siteCisPage.moveTextPositionByAmount(45, 340);
             if (siteCisValues.get(siteName)[1] > 0) {
-                siteCisPage.drawString("O2 " + String.format("%.2f", siteCisValues.get(siteName)[1]) + "%");
+                String formattedCIS = String.format("%.2f", siteCisValues.get(siteName)[1]);
+                siteCisPage.drawString("O2 " + formattedCIS + "%");
+                System.out.println(month + " " + siteName + " CIS O2 = " + formattedCIS + "%");
             } else {
                 siteCisPage.drawString("O2");
             }                
@@ -868,7 +872,9 @@ public class PdfReportWriter {
             siteCisPage.setNonStrokingColor(PDFReportCreator.opcoColours[2]);
             siteCisPage.moveTextPositionByAmount(45, 305);
             if (siteCisValues.get(siteName)[2] > 0) {
-                siteCisPage.drawString("THREE " + String.format("%.2f", siteCisValues.get(siteName)[2]) + "%");
+                String formattedCIS = String.format("%.2f", siteCisValues.get(siteName)[2]);
+                siteCisPage.drawString("THREE " + formattedCIS + "%");
+                System.out.println(month + " " + siteName + " CIS THREE = " + formattedCIS + "%");
             } else {
                 siteCisPage.drawString("THREE");
             }
@@ -879,7 +885,9 @@ public class PdfReportWriter {
             siteCisPage.setNonStrokingColor(PDFReportCreator.opcoColours[3]);
             siteCisPage.moveTextPositionByAmount(45, 270);
             if (siteCisValues.get(siteName)[3] > 0) {
-                siteCisPage.drawString("EE " + String.format("%.2f", siteCisValues.get(siteName)[3]) + "%");
+                String formattedCIS = String.format("%.2f", siteCisValues.get(siteName)[3]);
+                siteCisPage.drawString("EE " + formattedCIS + "%");
+                System.out.println(month + " " + siteName + " CIS EE = " + formattedCIS + "%");
             } else {
                 siteCisPage.drawString("EE");
             }    

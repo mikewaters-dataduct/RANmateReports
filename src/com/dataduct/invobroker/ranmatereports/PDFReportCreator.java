@@ -76,7 +76,7 @@ public class PDFReportCreator {
     private FileWriter logWriter = null; 
     private static int additionalMonthlyOffset = 0;
     private static float scalingFactor = 1;
-
+    private static boolean strictCIS = true; // can be set via a command line parameter (was false prior to AD fix)
         
     String agentName = "PDFReportAgent";
     // String sql = "";
@@ -188,13 +188,28 @@ public class PDFReportCreator {
         //float[] cisValues = new float[]{-1f, -1f, -1f, -1f, -1f, 100f}; // V,O,T,E, avg, min 
         float[] cisValues = new float[]{0f, 0f, 0f, 0f, 0f, 100f}; // V,O,T,E, avg, min 
         int numMnos = 0; // used for calculating the average where not all operators are present at a site
-        // MW's original slow way of coming up with %age close to the SLR screen in the GUI but not quite
-        //String cisSql = "SELECT sector_no, AVG(cis_kpi_all) AS CIS FROM `ranmate-femto`.site_operator_performance_history WHERE group_id = 'OpenCell' " + 
-        //                "AND measurement_time BETWEEN '" + begin + "' AND '" + end + "' AND site_id LIKE '" + site + "-%' group by sector_no";
-        // Exctly mtches the SLR screen in the GUI, not the extra filters for zero vlues
-        String cisSql = "SELECT sector_no, AVG(NULLIF(avg_cis_kpi_all ,0)) AS CIS FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history " +
+        
+        String cisSql = "";
+        if (strictCIS) {
+            // Exactly matches the SLR screen in the GUI, not the extra filters for zero values - requested by Andy to be changed for https://dataduct.atlassian.net/browse/OC-134
+            // so that potentially out of service cells are not missed        
+            log("Using strict CIS calculation");
+            // version with fractional bug for unused sectors
+            //cisSql = "SELECT sector_no, AVG(avg_cis_kpi_all) AS CIS FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history " +
+            //            "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end + "' AND site_id LIKE '" + site + "-%' " +
+            //            "group by sector_no";
+            // version with fractional bug for unused sectors fixed
+            cisSql = "SELECT sector_no, AVG(avg_cis_kpi_all) AS CIS FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history " +
+                        "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end + "' AND site_id LIKE '" + site + "-%' " +
+                        "and (avg_cis_kpi_all <> 0 or exists (select * from `ranmate-femto`.sites_sectors_live where v_dashboard_hourly_site_operator_performance_history.site_id = sites_sectors_live.site_id and v_dashboard_hourly_site_operator_performance_history.sector_no = sites_sectors_live.sector_no)) " +
+                        "group by v_dashboard_hourly_site_operator_performance_history.sector_no";
+            //System.out.println("CIS sql is " + cisSql);            
+        } else {
+            log("Using tolerant CIS calculation");
+            cisSql = "SELECT sector_no, AVG(NULLIF(avg_cis_kpi_all ,0)) AS CIS FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history " +
                         "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end + "' AND site_id LIKE '" + site + "-%' " +
                         "AND avg_cis_kpi_all != 0 AND min_cis_kpi_all != 0 AND max_cis_kpi_all != 0 group by sector_no";
+        }
         //System.out.println("CIS SQL is " + cisSql);
         try {
             ResultSet result = executeQuerySQL(cisSql);
@@ -213,7 +228,7 @@ public class PDFReportCreator {
             // fixes the bug where 'Perfect' was reported for sites with no CIS values because cisValues[5] is initialised to 100.
             if (noCisValues)
                 cisValues[5] = 0f;
-            cisValues[4] = (cisValues[0] + cisValues[1] + cisValues[2] + cisValues[3]) / numMnos; // average CIS KPI for this site
+            cisValues[4] = (cisValues[0] + cisValues[1] + cisValues[2] + cisValues[3]) / numMnos; // average CIS KPI for this site            
             //if (site.startsWith("Candy")) {
             //    System.out.println("    " + site + " original cis values = " + Arrays.toString(cisValues) + " and numMnos=" + numMnos); 
             //}
@@ -257,6 +272,11 @@ public class PDFReportCreator {
                 cellCounts = customerCellCounts.get(customer);
             }
             
+            // added for debuggin - not needed. problem was missing config in RANmate
+            //for (int w = 0; w < dataSql.length; w++) {
+            //        System.out.println("    " + dataSql[w]);
+            //        log("    " + dataSql[w]);                                    
+            //}
             executeUpdateSQL(dataSql);
             ResultSet dataData = executeQuerySQL(dataSql[dataSql.length - 1]);
             if (dataData.next()) { // there should be 2 rows returned, the first is Inbound, the second Outbound
@@ -392,6 +412,11 @@ public class PDFReportCreator {
                         //float[] mnoCis = { 99.23f, 98.45f, -1.0f, 96.0f, 99.4f}; 
                         float[] mnoCis = getCisValues(startTime, endTime, site);
                         siteVoiceCallNums.put(site, voiceCallsNum);
+                        
+                        // additional logging requested by Andy in OC-134 on 5/11/19
+                        String cisStr = "";
+                        for (float aCis: mnoCis) { cisStr += ", " + aCis; }
+                        log("CIS, " + reportMonth + ", " + site + cisStr);
 
                         //reportName = "StrattoOpenCell Service Report - " + customer + " " + site + " 201902 February.pdf";
                         if ((customer == null) || customer.equals("")) {
@@ -533,12 +558,12 @@ public class PDFReportCreator {
         
         PDFReportCreator reportCreator = new PDFReportCreator();
 
-        if (args.length == 3) { // fixed
+        if (args.length == 4) { // fixed
             if (args[0].equals("test") ) {
                 //System.err.println("Fixed period Test Report requested");
                 BRUNTWOOD_AND_CANDY_ONLY = true;                    
             } else if (args[0].equals("custom")) {
-                System.err.println("Too few arguments (3) for Custom Report request, should be 4");
+                System.err.println("Too few arguments (4) for Custom Report request, should be 5");
                 System.exit(1);
             } else {
                 //System.err.println("Fixed period Full Report requested");                
@@ -546,6 +571,9 @@ public class PDFReportCreator {
             additionalMonthlyOffset = Integer.parseInt(args[1]);
             //System.err.println("additionalMonthlyOffset is " + additionalMonthlyOffset);
             scalingFactor = Float.parseFloat(args[2]);
+            if ("strict".equals(args[3])) {
+                strictCIS = true;
+            } // else remains false
             reportCreator.setDates(custom, null, null);
             //System.err.println("scalingFactor is " + scalingFactor);
         } else if (args.length == 5) { // custom
@@ -553,7 +581,7 @@ public class PDFReportCreator {
                 System.err.println("Custom Report requested");
                 custom = true;                    
             } else {
-                System.err.println("Too many arguments (5) for Fixed Period Report request, should be 3");
+                System.err.println("Too many arguments (5) for Fixed Period Report request, should be 4");
                 System.exit(1);
             }
             reportCreator.setDates(custom, args[2], args[3]);
@@ -561,8 +589,8 @@ public class PDFReportCreator {
             //System.err.println("additionalMonthlyOffset is " + additionalMonthlyOffset);
             scalingFactor = Float.parseFloat(args[4]);
         } else {
-            System.err.println("Incorrect number of arguments (" + args.length + "), should be 3 or 5");
-            System.err.println("Usage: PDFReportGenerator full/test offset scalingFactor");
+            System.err.println("Incorrect number of arguments (" + args.length + "), should be 4 or 5");
+            System.err.println("Usage: PDFReportGenerator full/test offset scalingFactor tolerant/strict");
             System.err.println("Usage: PDFReportGenerator custom site_name start_date_time end_date_time scalingFactor");
             System.exit(1);
         }
@@ -678,19 +706,27 @@ public class PDFReportCreator {
      */
     private int[] getCellCounts(String siteName) {
         int[] cellNum = {0,0,0,0};
-        ResultSet countData = null;
+        ResultSet countData = null;         // normal switches
+        ResultSet virtualCountData = null;         // normal switches
         try {
-            // this logic tries to clculte only those cells tht were ctive during the period in question
+            // this logic tries to calculate only those cells that were active during the period in question
             //countData = executeQuerySQL("select cell_no % 4, count(*) from `ranmate-femto`.cells where exist and NOT exclude and group_id = 'Opencell' and site_id LIKE '" + siteName + "%' and effective_to > '" + startTime + "' and effective_from < '" + endTime + "' group by (cell_no % 4)");
-            // this query mtches ndy's expecttions from Concert
-            countData = executeQuerySQL("select (id - 1) % 4, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' group by (id - 1) % 4");
+            // this query matches Andy's expectations from Concert
+            countData = executeQuerySQL("select (id - 1) % 4, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%_VF' and switch_id not like '%_O2' and switch_id not like '%_3' and switch_id not like '%_EE' group by (id - 1) % 4");
             while (countData.next()) { // there should only be 1 row returned
                 cellNum[countData.getInt(1)] = countData.getInt(2);
+            }
+            virtualCountData = executeQuerySQL("select 0, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_VF' " +
+                                  "union select 1, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_O2' " +
+                                  "union select 2, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_3' " +
+                                  "union select 3, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_EE'");
+            while (virtualCountData.next()) { // there should only be 1 row returned
+                cellNum[virtualCountData.getInt(1)] += virtualCountData.getInt(2); // add any virtual switch counts to the normal switch counts
             }
         } catch (Exception e) {
             System.out.println("Error getting the cell counts for " + siteName + ", " + e.getMessage());
         } finally {
-            try {countData.close();} catch (Exception e) {}
+            try {countData.close();virtualCountData.close();} catch (Exception e) {}
         }
         return cellNum;
     }

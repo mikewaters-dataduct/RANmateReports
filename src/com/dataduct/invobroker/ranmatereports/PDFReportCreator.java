@@ -105,6 +105,15 @@ public class PDFReportCreator {
     public HashMap<String, Integer> siteDownloadVols = new HashMap(500);
     public HashMap<String, Integer> siteUploadVols = new HashMap(500);
 
+    // These collections store the specific time period exclusions specified in the 'exclusions' db table
+    private ArrayList<PeriodExclusion> networkExclusions = null;
+    private HashMap<String, ArrayList<PeriodExclusion>> siteExclusions = null;     // site name is the index
+    private HashMap<String, HashMap<String, ArrayList<PeriodExclusion>>> switchExclusions = null;   // full switch name incl the site is the index
+    // These collections store the generic business hours/days exclusions specified in the 'exclusions' db table
+    private ArrayList<NonBizHoursExclusion> networkNonBizHours = null;
+    private HashMap<String, ArrayList<NonBizHoursExclusion>> siteNonBizHours = null;     // site name is the index
+    private HashMap<String, HashMap<String, ArrayList<NonBizHoursExclusion>>> switchNonBizHours = null;   // full switch name incl the site is the index
+    
     public PDFReportCreator() {
         try {
             if (TEST_MODE) { // create the JDBC connection
@@ -189,6 +198,13 @@ public class PDFReportCreator {
         float[] cisValues = new float[]{0f, 0f, 0f, 0f, 0f, 100f}; // V,O,T,E, avg, min 
         int numMnos = 0; // used for calculating the average where not all operators are present at a site
         
+        if (networkExclusions.size() > 0) { System.out.println("There are network exclusions to be handled"); }
+        if (siteExclusions.containsKey(site)) { System.out.println("There are exclusions to be handled for this site"); }
+        if (switchExclusions.containsKey(site)) { System.out.println("There are exclusions to be handled for a switch at this site"); }
+        if (networkNonBizHours.size() > 0) { System.out.println("There are network non busines hours to be handled"); }
+        if (siteNonBizHours.containsKey(site)) { System.out.println("There are non busines hours to be handled for this site"); }
+        if (switchNonBizHours.containsKey(site)) { System.out.println("There are exclusions to be handled for a switch at this site"); }
+        
         String cisSql = "";
         if (strictCIS) {
             // Exactly matches the SLR screen in the GUI, not the extra filters for zero values - requested by Andy to be changed for https://dataduct.atlassian.net/browse/OC-134
@@ -200,14 +216,18 @@ public class PDFReportCreator {
             //            "group by sector_no";
             // version with fractional bug for unused sectors fixed
             cisSql = "SELECT sector_no, AVG(avg_cis_kpi_all) AS CIS FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history " +
-                        "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end + "' AND site_id LIKE '" + site + "-%' " +
+                        "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end + 
+                        // Hack until the db way of doing this via an Exclusion table is ready. Remove when it is
+                        "' AND measurement_time NOT BETWEEN '2020-01-23 21:00' AND '2020-01-29 23:30' AND site_id LIKE '" + site + "-%' " +
                         "and (avg_cis_kpi_all <> 0 or exists (select * from `ranmate-femto`.sites_sectors_live where v_dashboard_hourly_site_operator_performance_history.site_id = sites_sectors_live.site_id and v_dashboard_hourly_site_operator_performance_history.sector_no = sites_sectors_live.sector_no)) " +
                         "group by v_dashboard_hourly_site_operator_performance_history.sector_no";
             //System.out.println("CIS sql is " + cisSql);            
         } else {
             log("Using tolerant CIS calculation");
             cisSql = "SELECT sector_no, AVG(NULLIF(avg_cis_kpi_all ,0)) AS CIS FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history " +
-                        "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end + "' AND site_id LIKE '" + site + "-%' " +
+                        "WHERE group_id = 'OpenCell' AND measurement_time BETWEEN '" + begin + "' AND '" + end +
+                        // Hack until the db way of doing this via an Exclusion table is ready. Remove when it is
+                        "' AND measurement_time NOT BETWEEN '2020-01-23 21:00' AND '2020-01-29 23:30' AND site_id LIKE '" + site + "-%' " +
                         "AND avg_cis_kpi_all != 0 AND min_cis_kpi_all != 0 AND max_cis_kpi_all != 0 group by sector_no";
         }
         //System.out.println("CIS SQL is " + cisSql);
@@ -540,6 +560,15 @@ public class PDFReportCreator {
         averagedCisValues[5] = cisTotals[5]; // the min value doesn't get averaged
         return averagedCisValues;
     }
+
+    private void getExclusions() {
+        getNetworkExclusions();
+        getSiteExclusions();
+        // getSwitchExclusions(); // not really implementable
+        getNetworkBizHours();
+        getSiteBizHours();
+        // getSwitchBizHours(); // not really implementable
+    }
     
     /**
      * @param args the command line arguments
@@ -599,6 +628,10 @@ public class PDFReportCreator {
         
         ArrayList<String> customers = null;
         ArrayList<String>[] sites = null;
+        
+        // get the exclusions
+        reportCreator.getExclusions();
+        
         if (custom) {
             String customSiteName = args[1];
             reportCreator.createReport(custom, customSiteName, "", "", CUSTOM_REPORT_DIR, customSiteName, reportCreator.getSiteDataSQL(customSiteName), reportCreator.getSiteCallSQL(customSiteName));
@@ -712,14 +745,14 @@ public class PDFReportCreator {
             // this logic tries to calculate only those cells that were active during the period in question
             //countData = executeQuerySQL("select cell_no % 4, count(*) from `ranmate-femto`.cells where exist and NOT exclude and group_id = 'Opencell' and site_id LIKE '" + siteName + "%' and effective_to > '" + startTime + "' and effective_from < '" + endTime + "' group by (cell_no % 4)");
             // this query matches Andy's expectations from Concert
-            countData = executeQuerySQL("select (id - 1) % 4, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%_VF' and switch_id not like '%_O2' and switch_id not like '%_3' and switch_id not like '%_EE' group by (id - 1) % 4");
+            countData = executeQuerySQL("select (id - 1) % 4, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%\\_VF' and switch_id not like '%\\_O2' and switch_id not like '%\\_3' and switch_id not like '%\\_EE' group by (id - 1) % 4");
             while (countData.next()) { // there should only be 1 row returned
                 cellNum[countData.getInt(1)] = countData.getInt(2);
             }
-            virtualCountData = executeQuerySQL("select 0, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_VF' " +
-                                  "union select 1, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_O2' " +
-                                  "union select 2, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_3' " +
-                                  "union select 3, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%_EE'");
+            virtualCountData = executeQuerySQL("select 0, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_VF' " +
+                                  "union select 1, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_O2' " +
+                                  "union select 2, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_3' " +
+                                  "union select 3, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_EE'");
             while (virtualCountData.next()) { // there should only be 1 row returned
                 cellNum[virtualCountData.getInt(1)] += virtualCountData.getInt(2); // add any virtual switch counts to the normal switch counts
             }
@@ -995,6 +1028,113 @@ public class PDFReportCreator {
         return sites;
     }
 
+    public void getNetworkExclusions() {
+        try {
+            String GET_NET_EXCLUSIONS = "select start, finish from `ranmate-femto`.exclusions where network = 1 and start IS NOT null and finish IS NOT null";
+            ResultSet result = executeQuerySQL(GET_NET_EXCLUSIONS);
+            while (result.next()) {
+                networkExclusions.add(new PeriodExclusion(Exclusion.NETWORK_SCOPE, result));
+            }            
+        } catch (Exception e) {
+            System.out.println("Unable to get the Network Exclusions");
+        }            
+    }    
+
+    public void getSiteExclusions() {
+        try {
+            String GET_SITE_EXCLUSIONS = "select start, finish, site from `ranmate-femto`.exclusions where network = 0 and site IS NOT NULL and start IS NOT null and finish IS NOT null";
+            ResultSet result = executeQuerySQL(GET_SITE_EXCLUSIONS);
+            String prevSiteName = null;
+            while (result.next()) {
+                String siteName = result.getString(2);
+                if (!siteName.equals(prevSiteName)) {
+                    siteExclusions.put(siteName, new ArrayList());
+                }
+                siteExclusions.get(siteName).add(new PeriodExclusion(Exclusion.SITE_SCOPE, result));
+            }            
+        } catch (Exception e) {
+            System.out.println("Unable to get the Site Exclusions");
+        }            
+    }    
+    
+    public void getSwitchExclusions() {
+        try {
+            String GET_SWITCH_EXCLUSIONS = "select start, finish, site, switch from `ranmate-femto`.exclusions where network = 0 and site IS NOT NULL and switch IS NOT NULL and start IS NOT null and finish IS NOT null";
+            ResultSet result = executeQuerySQL(GET_SWITCH_EXCLUSIONS);
+            String prevSiteName = null;
+            String prevSwitchName = null;
+            while (result.next()) {
+                String siteName = result.getString(2);
+                String switchName = result.getString(3);
+                if (!siteName.equals(prevSiteName)) {
+                    switchExclusions.put(siteName, new HashMap());
+                }
+                if (!switchName.equals(prevSwitchName)) {
+                    switchExclusions.get(siteName).put(switchName, new ArrayList());
+                }
+                switchExclusions.get(siteName).get(switchName).add(new PeriodExclusion(Exclusion.SWITCH_SCOPE, result));
+            }            
+        
+        } catch (Exception e) {
+            System.out.println("Unable to get the Switch Exclusions");
+        }            
+    }    
+
+    public void getNetworkBizHours() {
+        try {
+            String GET_NET_BIZHOURS = "select sob, cob, exclude_saturday, exclude_sunday, exclude_bank_holiday from `ranmate-femto`.exclusions where network = 1 and sob IS NOT null and cob IS NOT null";
+            ResultSet result = executeQuerySQL(GET_NET_BIZHOURS);
+            while (result.next()) {
+                networkNonBizHours.add(new NonBizHoursExclusion(Exclusion.NETWORK_SCOPE, result));
+            }            
+        } catch (Exception e) {
+            System.out.println("Unable to get the Network Non Business Hours");
+        }            
+    }    
+
+    public void getSiteBizHours() {
+        try {
+            String GET_SITE_BIZHOURS = "select sob, cob, exclude_saturday, exclude_sunday, exclude_bank_holiday, site from `ranmate-femto`.exclusions where network = 0 and site IS NOT NULL and sob IS NOT null and cob IS NOT null";
+            ResultSet result = executeQuerySQL(GET_SITE_BIZHOURS);
+            String prevSiteName = null;
+            while (result.next()) {
+                String siteName = result.getString(5);
+                if (!siteName.equals(prevSiteName)) {
+                    siteNonBizHours.put(siteName, new ArrayList());
+                }
+                siteNonBizHours.get(siteName).add(new NonBizHoursExclusion(Exclusion.SITE_SCOPE, result));
+            }            
+        } catch (Exception e) {
+            System.out.println("Unable to get the Site Non Business Hours");
+        }            
+    }    
+
+    public void getSwitchBizHours() {
+        try {
+            String GET_SWITCH_BIZHOURS = "select sob, cob, exclude_saturday, exclude_sunday, exclude_bank_holiday, site, switch, from `ranmate-femto`.exclusions where network = 0 and site IS NOT NULL and switch IS NOT NULL and sob IS NOT null and cob IS NOT null";
+            ResultSet result = executeQuerySQL(GET_SWITCH_BIZHOURS);
+            String prevSiteName = null;
+            String prevSwitchName = null;
+            while (result.next()) {
+                String siteName = result.getString(5);
+                String switchName = result.getString(6);
+                if (!siteName.equals(prevSiteName)) {
+                    switchNonBizHours.put(siteName, new HashMap());
+                }
+                if (!switchName.equals(prevSwitchName)) {
+                    switchNonBizHours.get(siteName).put(switchName, new ArrayList());
+                }
+                switchNonBizHours.get(siteName).get(switchName).add(new NonBizHoursExclusion(Exclusion.SWITCH_SCOPE, result));
+            }            
+        } catch (Exception e) {
+            System.out.println("Unable to get the Switch Non Business Hours");
+        }            
+    }    
+        
+// BIZ HOURS    
+ // select switch, sob, cob, exclude_saturday, exclude_sunday, exclude_bank_holiday from `ranmate-femto`.exclusions where network = 0 and switch IS NOT NULL and sob IS NOT null and cob IS NOT null
+ // select switch, sob, cob, exclude_saturday, exclude_sunday, exclude_bank_holiday from `ranmate-femto`.exclusions where network = 0 and switch IS NOT NULL and sob IS NOT null and cob IS NOT null
+    
     /**
      * Look, not ideal, but to avoid having to process the sql array before it's sent to this method, it's sent here in its entirety 
      * The last sql statement in the array is a query, which is not to be executed here
@@ -1065,6 +1205,54 @@ public class PDFReportCreator {
         return result;
     }
 
+    public class Exclusion {
+
+        public static final int NETWORK_SCOPE = 1;
+        public static final int SITE_SCOPE = 2;
+        public static final int SWITCH_SCOPE = 3;    
+        public int scope = -1; 
+    }
+    
+    public class PeriodExclusion extends Exclusion {
+                
+        public String start = "";
+        public String finish = "";
+                
+        public PeriodExclusion(int theScope, ResultSet params) {
+            try {
+                scope = theScope;
+                start = params.getString(0);
+                finish = params.getString(1);
+            } catch (Exception e) {
+                System.out.println("Error populating PeriodExclusion instance, " + e.getMessage());
+                e.printStackTrace();
+            }                    
+        }
+    }
+    
+    public class NonBizHoursExclusion extends Exclusion {
+                
+        public String startOfBusiness = "";
+        public String closeOfBusiness = "";
+        public boolean excludeSaturday = false;
+        public boolean excludeSunday = false;
+        public boolean excludeBankHoliday = false;
+                
+        public NonBizHoursExclusion(int theScope, ResultSet params) {
+            try {
+                scope = theScope;
+                startOfBusiness = params.getString(0);
+                closeOfBusiness = params.getString(1);
+                excludeSaturday = params.getInt(2) == 1;
+                excludeSunday = params.getInt(3) == 1;
+                excludeBankHoliday = params.getInt(4) == 1;
+            } catch (Exception e) {
+                System.out.println("Error populating NonBizHoursExclusion instance, " + e.getMessage());
+                e.printStackTrace();
+            }                    
+        }
+    }
+    
     /* 
      * A simple renderer for setting custom colors 
      * for a pie chart. 

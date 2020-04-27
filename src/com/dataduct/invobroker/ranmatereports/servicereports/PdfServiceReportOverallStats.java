@@ -38,6 +38,7 @@ public class PdfServiceReportOverallStats {
     public int createOverallStatsSlide(PDDocument openCellDocument, PDFont fontCG, PDFont fontCGBold, int globalPageCounter, String coveringPeriod){
 
         PdfServiceReportDataCollector pdfReportDataCollector = new PdfServiceReportDataCollector(creator);
+        // Problematic method call
         String[] activitySites = pdfReportDataCollector.getActivitySites();
         String[] latestTtoSites = pdfReportDataCollector.getLatestTtoSites(false);
         String[] newInstalls = pdfReportDataCollector.getNewInstalls();
@@ -53,7 +54,9 @@ public class PdfServiceReportOverallStats {
 
             PdfServiceReportCommon.addTextToPage(contentStream, fontCG, 30, PdfServiceReportConfig.openCellFontBlue, 31, 467, "Overall Deployment Statistics");
             PdfServiceReportCommon.addTextToPage(contentStream, fontCGBold, 14, PdfServiceReportConfig.openCellFontGrey, 31, 430, "Statistics as of end " + coveringPeriod);
-            PdfServiceReportCommon.addTextToPage(contentStream, fontCGBold, 14, PdfServiceReportConfig.openCellFontGrey, 31, 410, "Total number of live sites: " + pdfReportDataCollector.getNoLiveSites() + " (More to follow once handed over from delivery)");
+            // Andy suggested removing this on 20/4/2020 - replaced with a single space to have minimal effect on slide layout
+            //PdfServiceReportCommon.addTextToPage(contentStream, fontCGBold, 14, PdfServiceReportConfig.openCellFontGrey, 31, 410, "Total number of live sites: " + pdfReportDataCollector.getNoLiveSites() + " (More to follow once handed over from delivery)");
+            PdfServiceReportCommon.addTextToPage(contentStream, fontCGBold, 14, PdfServiceReportConfig.openCellFontGrey, 31, 410, " ");
 
             //Table
             float margin = 15;

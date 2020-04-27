@@ -60,7 +60,7 @@ public class PDFReportCreator {
     private final static boolean TEST_MODE = true;
     private final static String JDBC_DRIVER = "com.mysql.jdbc.Driver";  
         //private final static String DB_URL = "jdbc:mysql://185.171.220.1/metrics";
-    private final static String DB_URL = "jdbc:mysql://185.171.220.1/OpenCellCM";
+    private final static String DB_URL = "jdbc:mysql://185.171.220.1/Concert";
     private final static String USER = "dataduct";
     private final static String PASS = "Brearly16";
     public final static String REPORT_DIR = "/var/Concert/reports/";
@@ -745,14 +745,14 @@ public class PDFReportCreator {
             // this logic tries to calculate only those cells that were active during the period in question
             //countData = executeQuerySQL("select cell_no % 4, count(*) from `ranmate-femto`.cells where exist and NOT exclude and group_id = 'Opencell' and site_id LIKE '" + siteName + "%' and effective_to > '" + startTime + "' and effective_from < '" + endTime + "' group by (cell_no % 4)");
             // this query matches Andy's expectations from Concert
-            countData = executeQuerySQL("select (id - 1) % 4, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%\\_VF' and switch_id not like '%\\_O2' and switch_id not like '%\\_3' and switch_id not like '%\\_EE' group by (id - 1) % 4");
+            countData = executeQuerySQL("select (id - 1) % 4, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%\\_VF' and switch_id not like '%\\_O2' and switch_id not like '%\\_3' and switch_id not like '%\\_EE' group by (id - 1) % 4");
             while (countData.next()) { // there should only be 1 row returned
                 cellNum[countData.getInt(1)] = countData.getInt(2);
             }
-            virtualCountData = executeQuerySQL("select 0, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_VF' " +
-                                  "union select 1, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_O2' " +
-                                  "union select 2, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_3' " +
-                                  "union select 3, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_EE'");
+            virtualCountData = executeQuerySQL("select 0, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_VF' " +
+                                  "union select 1, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_O2' " +
+                                  "union select 2, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_3' " +
+                                  "union select 3, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_EE'");
             while (virtualCountData.next()) { // there should only be 1 row returned
                 cellNum[virtualCountData.getInt(1)] += virtualCountData.getInt(2); // add any virtual switch counts to the normal switch counts
             }
@@ -795,7 +795,7 @@ public class PDFReportCreator {
     private String[] getCustomerCallSQL(String customerName) {
         String[] sql = new String[9]; // update and query type commands separate
         sql[0] = "DELETE FROM metrics.jflow_viewer_output_aggregated;";
-        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "' AND jflow.site_name IN (SELECT name from OpenCellCM.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
+        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "' AND jflow.site_name IN (SELECT name from Concert.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
         sql[2] = "DELETE FROM metrics.jflow_viewer_output_aggregated_live;";
         sql[3] = "INSERT INTO metrics.jflow_viewer_output_aggregated_live (select DISTINCT jflow_viewer_output_aggregated.* from metrics.jflow_viewer_output_aggregated, `ranmate-femto`.cells where cells.site_id LIKE CONCAT(jflow_viewer_output_aggregated.site_name, '%') and jflow_viewer_output_aggregated.operator_id = (cells.cell_no % 4) + 1 and cells.effective_to > '" + startTime + "' and cells.effective_from < '" + endTime + "' and cells.exist and NOT exclude order by jflow_viewer_output_aggregated.measurement_time);";
         sql[4] = "DELETE FROM metrics.jflow_viewer_output_pivoted;";
@@ -828,7 +828,7 @@ public class PDFReportCreator {
     private String[] getCustomerDataSQL(String customerName) {
         String[] sql = new String[8]; // update and query type commands separate
         sql[0] = "DELETE FROM metrics.jflow_viewer_output_aggregated;";
-        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "'  AND jflow.site_name IN (SELECT name from OpenCellCM.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
+        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "'  AND jflow.site_name IN (SELECT name from Concert.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
         sql[2] = "DELETE FROM metrics.jflow_viewer_output_aggregated_live;";
         sql[3] = "INSERT INTO metrics.jflow_viewer_output_aggregated_live (select DISTINCT jflow_viewer_output_aggregated.* from metrics.jflow_viewer_output_aggregated, `ranmate-femto`.cells where cells.site_id LIKE CONCAT(jflow_viewer_output_aggregated.site_name, '%') and jflow_viewer_output_aggregated.operator_id = (cells.cell_no % 4) + 1 and cells.effective_to > '" + startTime + "' and cells.effective_from < '" + endTime + "' and cells.exist and NOT exclude order by jflow_viewer_output_aggregated.measurement_time);";      
         sql[4] = "DELETE FROM metrics.jflow_viewer_output_pivoted;";
@@ -973,8 +973,8 @@ public class PDFReportCreator {
         if (!bruntwoodOnly) { // used for testing, a custoemr with a small number of sites
             // requested to be changed from this to below by Andy Gillions email 1/5/2019 15:12
             // this causes reports to be generated for all customers, including those with only 1 site and the data within will be duplicated
-            //String customerListSql = "SELECT customer FROM OpenCellCM.Site GROUP BY customer HAVING count(*) > 1";
-            String customerListSql = "SELECT customer FROM OpenCellCM.Site GROUP BY customer";
+            //String customerListSql = "SELECT customer FROM Concert.Site GROUP BY customer HAVING count(*) > 1";
+            String customerListSql = "SELECT customer FROM Concert.Site GROUP BY customer";
             try {
                 ResultSet result = executeQuerySQL(customerListSql);
                 while (result.next()) {
@@ -1000,12 +1000,12 @@ public class PDFReportCreator {
         String siteListSql = "";
         //String siteListSql = "Select DISTINCT site_name from metrics.routers ORDER BY site_name";            
         if (!bruntwoodOnly) { // used for testing, a customer with a small number of sites
-            // siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, OpenCellCM.Site where routers.site_name = Site.name ORDER BY site_name;";            
+            // siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, Concert.Site where routers.site_name = Site.name ORDER BY site_name;";            
             // only sites that have a live Femto
-            siteListSql = "Select DISTINCT routers.site_name, Site.customer, Site.id from metrics.routers, OpenCellCM.Site, OpenCellCM.Femto where routers.site_name = Site.name and Femto.site_name = Site.name and Femto.live ORDER BY site_name;";            
+            siteListSql = "Select DISTINCT routers.site_name, Site.customer, Site.id from metrics.routers, Concert.Site, Concert.Femto where routers.site_name = Site.name and Femto.site_name = Site.name and Femto.live ORDER BY site_name;";            
             
         } else {
-            siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, OpenCellCM.Site where routers.site_name = Site.name "
+            siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, Concert.Site where routers.site_name = Site.name "
                     // + "AND (customer = 'Bruntwood' OR customer = 'Candy & Candy') ORDER BY site_name;";            
                     // + "AND (customer = 'Village Hotel') ORDER BY site_name;";            
                     + "AND name = 'The Frames' ORDER BY site_name;";            

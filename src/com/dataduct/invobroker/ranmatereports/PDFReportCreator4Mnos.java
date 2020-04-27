@@ -8,6 +8,7 @@
 package com.dataduct.invobroker.ranmatereports;
 
 import com.dataduct.invobroker.imsManager.ImsManager;
+import com.dataduct.invobroker.ranmatereports.servicereports.PdfServiceReportGenerator;
 import com.dataduct.invobroker.utils.KeyValuePair;
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -32,24 +33,30 @@ import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import org.jfree.chart.ChartPanel;
+import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.block.BlockBorder;
 import org.jfree.chart.labels.PieSectionLabelGenerator;
 import org.jfree.chart.labels.StandardPieSectionLabelGenerator;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PiePlot;
 import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.RingPlot;
+import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.chart.renderer.category.StandardBarPainter;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
 import org.jfree.data.general.PieDataset;
+import org.jfree.data.time.Millisecond;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+import org.jfree.ui.RectangleEdge;
         
 /**
  *
@@ -62,14 +69,14 @@ public class PDFReportCreator4Mnos {
     private final static boolean STANDALONE_MODE = true;
     private final static String JDBC_DRIVER = "com.mysql.jdbc.Driver";  
         //private final static String DB_URL = "jdbc:mysql://185.171.220.1/metrics";
-    private final static String DB_URL = "jdbc:mysql://185.171.220.1/OpenCellCM";
+    private final static String DB_URL = "jdbc:mysql://185.171.220.1/Concert";
     private final static String USER = "dataduct";
     private final static String PASS = "Brearly16";
     public final static String REPORT_DIR = "/var/Concert/reports/";
     public final static String SITE_REPORT_DIR = REPORT_DIR + "sites/";
     public final static String CUSTOM_REPORT_DIR = REPORT_DIR + "custom/";
     public final static String CUSTOMER_REPORT_DIR = REPORT_DIR + "customers/";
-    public final static String MNO_REPORT_DIR = REPORT_DIR + "operators/";
+    public final static String MNO_REPORT_DIR = REPORT_DIR + "mnos/";
     public final static String REPORT_TEMPLATE_DIR = REPORT_DIR + "template/";
     // public final static Color[] opcoColours = { new Color(255,36,36), new Color(42,137,192), new Color(182,95,194), new Color(43,172,177) }; // now stored in the per-Customer database table
     private static XYLineAndShapeRenderer renderer = null;
@@ -78,11 +85,12 @@ public class PDFReportCreator4Mnos {
     private static int additionalMonthlyOffset = 0;
     private static float scalingFactor = 1;
     private static boolean strictCIS = true; // can be set via a command line parameter (was false prior to AD fix)
+    private static boolean custom = false; // indicates whether the report is scheduled or custom
         
     String agentName = "PDFReportAgent";
     // String sql = "";
-    static String startTime = "";   // would have preferred non-static, but ended up stuck in a main conundrum coz of 2 ways fo this class being invoked
-    static String endTime = "";
+    public static String startTime = "";   // would have preferred non-static, but ended up stuck in a main conundrum coz of 2 ways fo this class being invoked
+    public static String endTime = "";
     String fileNameDate = null; // null for custom reports that aren't saved to file
     String reportMonth = "";
     String reportYear = "";
@@ -117,6 +125,12 @@ public class PDFReportCreator4Mnos {
     private HashMap<String, ArrayList<NonBizHoursExclusion>> siteNonBizHours = new HashMap(10);     // site name is the index
     private HashMap<String, HashMap<String, ArrayList<NonBizHoursExclusion>>> switchNonBizHours = new HashMap(10);   // full switch name incl the site is the index
     
+    // Should be in the ZAW classes but difficult to find a consistent place for it
+    public HashMap<String, Color> overallSiteColour = new HashMap(10);
+    public String[] nonTtoOverallNwPerformance = null; // will be set from the PDFServiceReportDataCollector
+    public Double[] nonTtoHands = new Double[2];
+    public int[] nonTtoCounts = new int[3];
+    public ArrayList<String[]> incidents = new ArrayList(5); // a 2D array of Site Names - an incidents
     
     public PDFReportCreator4Mnos() {
         try {
@@ -125,11 +139,11 @@ public class PDFReportCreator4Mnos {
                 Class.forName(JDBC_DRIVER);
 
                 //STEP 3: Open a connection
-                System.out.println("Connecting to database...");
+                //System.out.println("Connecting to database...");
                 conn = DriverManager.getConnection(DB_URL,USER,PASS);
 
                 //STEP 4: Execute a query
-                System.out.println("Creating statement...");
+                //System.out.println("Creating statement...");
                 stmt = conn.createStatement();            
     
                 getMnoIds();
@@ -641,7 +655,7 @@ public class PDFReportCreator4Mnos {
      */
     public static void main(String[] args) {
         boolean BRUNTWOOD_AND_CANDY_ONLY = false; // used for testing, small number of sites
-        boolean custom = false; // set here for now
+        // boolean custom = false; // set here for now - now exists as a class var
         
         PDFReportCreator4Mnos reportCreator = new PDFReportCreator4Mnos();
 
@@ -692,7 +706,19 @@ public class PDFReportCreator4Mnos {
         
         if (custom) {
             String customSiteName = args[1];
-            reportCreator.createReport(custom, customSiteName, "", "", CUSTOM_REPORT_DIR, customSiteName, reportCreator.getSiteDataSQL(customSiteName), reportCreator.getSiteCallSQL(customSiteName));
+            if (customSiteName.startsWith("(MNO)")) {
+                try {
+                    String mno = customSiteName.substring(6); // remove // '(MNO) '
+                    // fileNameDate = "January 2020";//to be removed
+                    PdfServiceReportGenerator reportGenerator = new PdfServiceReportGenerator(reportCreator, reportCreator.fileNameDate, mno, CUSTOM_REPORT_DIR, custom);
+                    reportGenerator.createReport();
+                    System.out.println("PDF MNO report creation for " + reportCreator.fileNameDate + " is done.");
+                } catch (Exception e) {
+                    System.err.println("PDF MNO report creation error " + e.getMessage());                    
+                }
+            } else {
+                reportCreator.createReport(custom, customSiteName, "", "", CUSTOM_REPORT_DIR, customSiteName, reportCreator.getSiteDataSQL(customSiteName), reportCreator.getSiteCallSQL(customSiteName));
+            }
         } else {
             customers = reportCreator.getCustomerList(BRUNTWOOD_AND_CANDY_ONLY);
             sites = reportCreator.getSiteList(BRUNTWOOD_AND_CANDY_ONLY);
@@ -709,7 +735,7 @@ public class PDFReportCreator4Mnos {
                 if (reportCreator.createReport(custom, siteName, siteId, customer, SITE_REPORT_DIR, siteName, reportCreator.getSiteDataSQL(siteName), reportCreator.getSiteCallSQL(siteName))) {
                     try {
                         String[] sql = new String[2]; // don't ask why 2...
-                        sql[0] = "INSERT IGNORE INTO metrics.generated_reports VALUES ('" + customer + "','" + siteName + "'," + PdfReportWriter.SITE + "," + PdfReportWriter.MONTH + ", '" + reportCreator.getDirName(reportCreator.endTime) + "');";
+                        sql[0] = "INSERT IGNORE INTO metrics.generated_reports VALUES ('" + customer + "','" + siteName + "'," + PdfReportWriter4Mnos.SITE + "," + PdfReportWriter4Mnos.MONTH + ", '" + reportCreator.getDirName(reportCreator.endTime) + "');";
                         reportCreator.executeUpdateSQL(sql);
                     } catch (Exception e) {
                         System.out.println("Error recording report generated for site  " + siteName + ", " + e.getMessage());
@@ -724,8 +750,8 @@ public class PDFReportCreator4Mnos {
             for (String customer: customers) {
                 if (reportCreator.createReport(custom, null, "", customer, CUSTOMER_REPORT_DIR, customer, reportCreator.getCustomerDataSQL(customer), reportCreator.getCustomerCallSQL(customer))) {
                     try {
-                        String[] sql = new String[2];
-                        sql[0] = "INSERT IGNORE INTO metrics.generated_reports VALUES ('" + customer + "','" + customer + "'," + PdfReportWriter.CUSTOMER + "," + PdfReportWriter.MONTH + ", '" + reportCreator.getDirName(reportCreator.endTime) + "');";
+                        String[] sql = new String[2]; // seriously fucked up method
+                        sql[0] = "INSERT IGNORE INTO metrics.generated_reports VALUES ('" + customer + "','" + customer + "'," + PdfReportWriter4Mnos.CUSTOMER + "," + PdfReportWriter4Mnos.MONTH + ", '" + reportCreator.getDirName(reportCreator.endTime) + "');";
                         reportCreator.executeUpdateSQL(sql);
                     } catch (Exception e) {
                         System.out.println("Error recording report generated for customer " + customer + ", " + e.getMessage());
@@ -820,14 +846,21 @@ public class PDFReportCreator4Mnos {
             // this logic tries to calculate only those cells that were active during the period in question
             //countData = executeQuerySQL("select cell_no % 4, count(*) from `ranmate-femto`.cells where exist and NOT exclude and group_id = 'Opencell' and site_id LIKE '" + siteName + "%' and effective_to > '" + startTime + "' and effective_from < '" + endTime + "' group by (cell_no % 4)");
             // this query matches Andy's expectations from Concert
-            countData = executeQuerySQL("select (id - 1) % 4, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%\\_" + mnos.get(0).id + "' and switch_id not like '%\\_" + mnos.get(1).id + "' and switch_id not like '%\\_" + mnos.get(2).id + "' and switch_id not like '%\\_" + mnos.get(3).id + "' group by (id - 1) % 4");
+            // not a strict enough matching of the site name causing a problem identifed by John on 16/3/2020 with Sea Containers "changing from like %" to '=' should fix it
+            //countData = executeQuerySQL("select (id - 1) % 4, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id not like '%\\_" + mnos.get(0).id + "' and switch_id not like '%\\_" + mnos.get(1).id + "' and switch_id not like '%\\_" + mnos.get(2).id + "' and switch_id not like '%\\_" + mnos.get(3).id + "' group by (id - 1) % 4");
+            countData = executeQuerySQL("select (id - 1) % 4, count(*) from Concert.Femto where `exists` and live and site_name = '" + siteName + "' and switch_id not like '%\\_" + mnos.get(0).id + "' and switch_id not like '%\\_" + mnos.get(1).id + "' and switch_id not like '%\\_" + mnos.get(2).id + "' and switch_id not like '%\\_" + mnos.get(3).id + "' group by (id - 1) % 4");
             while (countData.next()) { // there should only be 1 row returned
                 cellNum[countData.getInt(1)] = countData.getInt(2);
             }
-            virtualCountData = executeQuerySQL("select 0, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(0).id + "' " +
-                                  "union select 1, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(1).id + "' " +
-                                  "union select 2, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(2).id + "' " +
-                                  "union select 3, count(*) from OpenCellCM.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(3).id + "'");
+            // not a strict enough matching of the site name causing a problem identifed by John on 16/3/2020 with Sea Containers "changing from like %" to '=' should fix it
+//            virtualCountData = executeQuerySQL("select 0, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(0).id + "' " +
+//                                  "union select 1, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(1).id + "' " +
+//                                  "union select 2, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(2).id + "' " +
+//                                  "union select 3, count(*) from Concert.Femto where `exists` and live and site_name LIKE '" + siteName + "%' and switch_id like '%\\_" + mnos.get(3).id + "'");
+            virtualCountData = executeQuerySQL("select 0, count(*) from Concert.Femto where `exists` and live and site_name = '" + siteName + "' and switch_id like '%\\_" + mnos.get(0).id + "' " +
+                                  "union select 1, count(*) from Concert.Femto where `exists` and live and site_name = '" + siteName + "' and switch_id like '%\\_" + mnos.get(1).id + "' " +
+                                  "union select 2, count(*) from Concert.Femto where `exists` and live and site_name = '" + siteName + "' and switch_id like '%\\_" + mnos.get(2).id + "' " +
+                                  "union select 3, count(*) from Concert.Femto where `exists` and live and site_name = '" + siteName + "' and switch_id like '%\\_" + mnos.get(3).id + "'");
             while (virtualCountData.next()) { // there should only be 1 row returned
                 cellNum[virtualCountData.getInt(1)] += virtualCountData.getInt(2); // add any virtual switch counts to the normal switch counts
             }
@@ -870,7 +903,7 @@ public class PDFReportCreator4Mnos {
     private String[] getCustomerCallSQL(String customerName) {
         String[] sql = new String[9]; // update and query type commands separate
         sql[0] = "DELETE FROM metrics.jflow_viewer_output_aggregated;";
-        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "' AND jflow.site_name IN (SELECT name from OpenCellCM.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
+        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "' AND jflow.site_name IN (SELECT name from Concert.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
         sql[2] = "DELETE FROM metrics.jflow_viewer_output_aggregated_live;";
         sql[3] = "INSERT INTO metrics.jflow_viewer_output_aggregated_live (select DISTINCT jflow_viewer_output_aggregated.* from metrics.jflow_viewer_output_aggregated, `ranmate-femto`.cells where cells.site_id LIKE CONCAT(jflow_viewer_output_aggregated.site_name, '%') and jflow_viewer_output_aggregated.operator_id = (cells.cell_no % 4) + 1 and cells.effective_to > '" + startTime + "' and cells.effective_from < '" + endTime + "' and cells.exist and NOT exclude order by jflow_viewer_output_aggregated.measurement_time);";
         sql[4] = "DELETE FROM metrics.jflow_viewer_output_pivoted;";
@@ -903,7 +936,7 @@ public class PDFReportCreator4Mnos {
     private String[] getCustomerDataSQL(String customerName) {
         String[] sql = new String[8]; // update and query type commands separate
         sql[0] = "DELETE FROM metrics.jflow_viewer_output_aggregated;";
-        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "'  AND jflow.site_name IN (SELECT name from OpenCellCM.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
+        sql[1] = "INSERT INTO metrics.jflow_viewer_output_aggregated (SELECT DATE(measurement_time), site_name, operator_id, SUM(cs_inbound) AS 'Calls Inbound', SUM(ps_inbound) AS 'Data Inbound', SUM(signalling_inbound) AS 'Remainder Inbound',  SUM(total_inbound) AS 'Total Inbound',SUM(cs_outbound) AS 'Calls Outbound', SUM(ps_outbound) AS 'Data Outbound', SUM(signalling_outbound) AS 'Remainder Outbound',  SUM(total_outbound) AS 'Total Outbound'FROM metrics.jflow WHERE measurement_time BETWEEN '" + startTime + "' AND '" + endTime + "'  AND jflow.site_name IN (SELECT name from Concert.Site where Customer = '" + customerName + "') GROUP BY DATE(measurement_time), site_name, operator_id order by measurement_time, site_name, operator_id);";
         sql[2] = "DELETE FROM metrics.jflow_viewer_output_aggregated_live;";
         sql[3] = "INSERT INTO metrics.jflow_viewer_output_aggregated_live (select DISTINCT jflow_viewer_output_aggregated.* from metrics.jflow_viewer_output_aggregated, `ranmate-femto`.cells where cells.site_id LIKE CONCAT(jflow_viewer_output_aggregated.site_name, '%') and jflow_viewer_output_aggregated.operator_id = (cells.cell_no % 4) + 1 and cells.effective_to > '" + startTime + "' and cells.effective_from < '" + endTime + "' and cells.exist and NOT exclude order by jflow_viewer_output_aggregated.measurement_time);";      
         sql[4] = "DELETE FROM metrics.jflow_viewer_output_pivoted;";
@@ -913,6 +946,267 @@ public class PDFReportCreator4Mnos {
         //System.out.println("Customer SQL is " + Arrays.toString(sql));
         return sql; 
     }
+
+    private void populateKpiDataset(String sql, TimeSeries kpiSeries, TimeSeries slaSeries) {
+        try {
+            ResultSet result = executeQuerySQL(sql);
+            while (result.next()) {
+                kpiSeries.add(new Millisecond(result.getTimestamp(1)), result.getFloat(2));
+                slaSeries.add(new Millisecond(result.getTimestamp(1)), result.getFloat(3));
+            }
+        } catch (Exception e) {
+            System.out.println("Unable to get list of customers");
+        }
+
+    }
+
+    public JFreeChart createChart(String kpi, String chartTitle, String sql) {
+        JFreeChart chart = null;
+        long start = new Date().getTime();        
+        try {
+            TimeSeriesCollection dataset = new TimeSeriesCollection();
+            TimeSeries kpiSeries = new TimeSeries(kpi);
+            TimeSeries slaSeries = new TimeSeries(kpi + " SLA");
+            chart = ChartFactory.createTimeSeriesChart(chartTitle, null, kpi + " %age", dataset);
+            XYPlot plot = (XYPlot)chart.getPlot();
+            ValueAxis domain = plot.getDomainAxis(); // No x axis label
+            //domain.setVisible(false);     
+
+            plot.setBackgroundPaint(Color.WHITE);
+            chart.getLegend().setFrame(BlockBorder.NONE);        
+            chart.getLegend().setPosition(RectangleEdge.RIGHT);
+
+            //chart.getLegend().setBackgroundPaint(trans);
+            populateKpiDataset(sql, kpiSeries, slaSeries);
+            dataset.addSeries(slaSeries);
+            dataset.addSeries(kpiSeries);
+        } catch(Exception e) {
+            System.out.println("Error generating " + chartTitle + " chart: " + e.getMessage() + ". SQL = " + sql);
+        }
+        System.out.println((new Date().getTime() - start)/1000 + " seconds to create " + chartTitle + " chart with sql: " + sql);        
+        return chart;
+    }
+
+    /**
+     * Uses the UPTIME tmp table
+     * @param isTto
+     * @return 
+     */
+    public JFreeChart createCisGraph(boolean isTto) {
+        // 1a is for TTO/Non-TTO filtering and should only be used for scheduled reporting coz it takes fucking ages
+        //String sqlCommon1a = "SELECT DATE(measurement_time) AS 'Date', ROUND(AVG(delta_seconds)/9,2) AS CIS, '99' " + 
+        String sqlCommon1a = "SELECT measurement_time AS 'Date', ROUND(AVG(delta_seconds)/9,2) AS CIS, '99' " + 
+//                            "FROM metrics.UPTIME_reports_tmp, Concert.Femto, Concert.Site " +
+                            "FROM metrics.mno_counters_uptime_delta, Concert.Femto, Concert.Site " +
+                            "WHERE measurement_time BETWEEN '" + startTime + "' and '" + endTime + "' ";
+        // 1b does not do TTO/Non-TTO filtering and can be used for custom reports
+        //String sqlCommon1b = "SELECT DATE(measurement_time) AS 'Date', ROUND(AVG(delta_seconds)/9,2) AS CIS, '99' " + 
+        String sqlCommon1b = "SELECT measurement_time AS 'Date', ROUND(AVG(delta_seconds)/9,2) AS CIS, '99' " + 
+//                            "FROM metrics.UPTIME_reports_tmp " +
+                            "FROM metrics.mno_counters_uptime_delta " +
+                            "WHERE measurement_time BETWEEN '" + startTime + "' and '" + endTime + "' ";
+//        String sqlTto = "and UPTIME_reports_tmp.imei = Femto.imei and Site.id = Femto.site_id and Site.tto = 'T' ";
+//        String sqlNonTto = "and UPTIME_reports_tmp.imei = Femto.imei and Site.id = Femto.site_id and Site.tto = 'N' ";
+        String sqlTto = "and mno_counters_uptime_delta.imei = Femto.imei and Site.id = Femto.site_id and Site.tto = 'T' ";
+        String sqlNonTto = "and mno_counters_uptime_delta.imei = Femto.imei and Site.id = Femto.site_id and Site.tto = 'N' ";
+        String sqlCommon2 = "group by DATE(measurement_time)";
+        
+        String sql = "";
+        // if (custom) { // Monthly reports take approx an hour if customised for TTO/non TTO - too long for a GUI driven report 
+        if (false) { // let's see what the performance is
+            sql = sqlCommon1b + sqlCommon2;
+        } else {
+            if (isTto) {
+                sql = sqlCommon1a + sqlTto + sqlCommon2;
+            } else {
+                sql = sqlCommon1a + sqlNonTto + sqlCommon2;            
+            }             
+        }
+        //System.out.println("CIS SQL = " + sql);
+        return createChart("CIS", "Cell Availability (TTO + Non-TTO Sites)", sql);
+        //return createChart("CIS", "Placeholder Stock Image", sql);
+    }    
+    
+    public JFreeChart createRANmateCisGraph(boolean isTto) {
+        // 1a is for TTO/Non-TTO filtering and should only be used for scheduled reporting coz it takes fucking ages
+        String sqlCommon1a = "SELECT DATE(measurement_time) AS 'Date', ROUND(AVG(avg_cis_kpi_all),2) AS CIS, '99' " + 
+                            "FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history, `ranmate-femto`.sites, Concert.Site " +
+                            "WHERE v_dashboard_hourly_site_operator_performance_history.group_id = 'OpenCell' AND measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+                            "' and sector_no = 2 and sites.site_id = v_dashboard_hourly_site_operator_performance_history.site_id and sites.group_id = 'OpenCell' ";
+        // 1b does not do TTO/Non-TTO filtering and can be used for custom reports
+        String sqlCommon1b = "SELECT DATE(measurement_time) AS 'Date', ROUND(AVG(avg_cis_kpi_all),2) AS CIS, '99' " + 
+                            "FROM `ranmate-femto`.v_dashboard_hourly_site_operator_performance_history, `ranmate-femto`.sites " +
+                            "WHERE v_dashboard_hourly_site_operator_performance_history.group_id = 'OpenCell' AND measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+                            "' and sector_no = 2 and sites.site_id = v_dashboard_hourly_site_operator_performance_history.site_id and sites.group_id = 'OpenCell' ";
+        String sqlTto = "and Site.id = sites.node_id and Site.tto = 'T' ";
+        String sqlNonTto = "and Site.id = sites.node_id and Site.tto = 'N' ";
+        String sqlCommon2 = "and (avg_cis_kpi_all <> 0 or exists (select * from `ranmate-femto`.sites_sectors_live " +
+                            "where v_dashboard_hourly_site_operator_performance_history.site_id = sites_sectors_live.site_id " +
+                            "and v_dashboard_hourly_site_operator_performance_history.sector_no = sites_sectors_live.sector_no)) " +
+                            "group by DATE(measurement_time)";
+        
+        String sql = "";
+        if (custom) { // Monthly reports take approx an hour if customised for TTO/non TTO - too long for a GUI driven report 
+            sql = sqlCommon1b + sqlCommon2;
+        } else {
+            if (isTto) {
+                sql = sqlCommon1a + sqlTto + sqlCommon2;
+            } else {
+                sql = sqlCommon1a + sqlNonTto + sqlCommon2;            
+            }             
+        }
+        return createChart("CIS", "Cell Availability (TTO + Non-TTO Sites)", sql);
+        //return createChart("CIS", "Placeholder Stock Image", sql);
+    }
+    
+    public JFreeChart createCsDcrGraph(boolean isTto) {
+        
+//        String sqlCommon1 = "select measurement_time, AVG(CSDROPRATE), '5' from metrics.mno_kpis, Concert.Femto, Concert.Site " +
+//                    "where mno_kpis.measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+//                    "' and mno_kpis.imei = Femto.imei and Femto.site_id = Site.id ";
+        // might not need this - the problem was use of Femto_test in the above I think
+        String sqlCommon1 = "select measurement_time, ROUND(ifnull((((SUM(SPEECHDROPAPINITATED) + SUM(CSVIDEODROPAPINITIATED) + SUM(CSVIDEODROPCNINITIATED)) / (SUM(CSSPEECHRABSUCCESS) + SUM(CSVIDEORABSUCCESS))) * 100),0),2), "
+                + "'5' from metrics.mno_counters, Concert.Femto, Concert.Site where mno_counters.measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+                    "' and mno_counters.imei = Femto.imei and Femto.site_id = Site.id ";
+        String sqlTto = "and (Site.tto = 'T' or Site.tto = 'C'  or Site.tto = 'E') ";
+        String sqlNonTto = "and Site.tto = 'N' ";
+        String sqlCommon2 = "group by DATE(measurement_time) order by measurement_time;";
+        String sql = "";
+        if (isTto) {
+            sql = sqlCommon1 + sqlTto + sqlCommon2;
+        } else {
+            sql = sqlCommon1 + sqlNonTto + sqlCommon2;            
+        }        
+        return createChart("CS DCR", "CS/DCR", sql);
+    }
+    
+    public JFreeChart createInterfapCSHOGraph(boolean isTto) {
+//        String sqlCommon1 = "select measurement_time, AVG(CSHANDINSUCCESSRATE), '93' from metrics.mno_kpis, Concert.Femto, Concert.Site " +
+//                    "where mno_kpis.measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+//                    "' and mno_kpis.imei = Femto.imei and Femto.site_id = Site.id ";
+        String sqlCommon1 = "select measurement_time, ROUND(ifnull(((SUM(INTERFAPCSHANDINSUCCESS) + SUM(INTERFAPCSHANDINCANCELS)) / (SUM(INTERFAPCSHANDINATTEMPTS)) * 100),100),2), "
+                + "'93' from metrics.mno_counters, Concert.Femto, Concert.Site where mno_counters.measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+                    "' and mno_counters.imei = Femto.imei and Femto.site_id = Site.id ";
+        String sqlTto = "and (Site.tto = 'T' or Site.tto = 'C'  or Site.tto = 'E') ";
+        String sqlNonTto = "and Site.tto = 'N' ";
+        String sqlCommon2 = "group by DATE(measurement_time) order by measurement_time;";
+        String sql = "";
+        if (isTto) {
+            sql = sqlCommon1 + sqlTto + sqlCommon2;
+        } else {
+            sql = sqlCommon1 + sqlNonTto + sqlCommon2;            
+        }        
+        return createChart("CS HO", "Interfap CS Handover", sql);
+    }
+    
+    public JFreeChart createPsDcrGraph(boolean isTto) {
+//        String sqlCommon1 = "select measurement_time, AVG(PSDROPRATE), '6.5' from metrics.mno_kpis, Concert.Femto, Concert.Site " +
+//                    "where mno_kpis.measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+//                    "' and mno_kpis.imei = Femto.imei and Femto.site_id = Site.id ";
+        String sqlCommon1 = "select measurement_time, ROUND(ifnull(((SUM(PSDROPAPINITIATED) / (SUM(PSHSDPARABSUCCESS) + SUM(PSR99RABSUCCESS))) * 100),0),2), "
+                + "'6.5' from metrics.mno_counters, Concert.Femto, Concert.Site where mno_counters.measurement_time BETWEEN '" + startTime + "' and '" + endTime +
+                    "' and mno_counters.imei = Femto.imei and Femto.site_id = Site.id ";
+        String sqlTto = "and (Site.tto = 'T' or Site.tto = 'C'  or Site.tto = 'E') ";
+        String sqlNonTto = "and Site.tto = 'N' ";
+        String sqlCommon2 = "group by DATE(measurement_time) order by measurement_time;";
+        String sql = "";
+        if (isTto) {
+            sql = sqlCommon1 + sqlTto + sqlCommon2;
+        } else {
+            sql = sqlCommon1 + sqlNonTto + sqlCommon2;            
+        }        
+        return createChart("PS DCR", "PS/DCR", sql);
+    }
+    
+    public JFreeChart createTtoDoughnut(int numTto, int numNonTto) {
+
+        Color trans = new Color(0xFF, 0xFF, 0xFF, 0);
+        
+        DefaultPieDataset dataset = new DefaultPieDataset();
+        dataset.setValue("TTO", numTto);
+        dataset.setValue("Non TTO", numNonTto);
+
+        JFreeChart chart = ChartFactory.createRingChart(
+            "TTO vs NON-TTO",  // chart title
+            dataset,             // data
+            true,               // include legend
+            true,
+            false
+        );
+
+        RingPlot plot = (RingPlot) chart.getPlot();
+        plot.setLabelFont(new Font("SansSerif", Font.PLAIN, 12));
+        plot.setNoDataMessage("No data available");
+        plot.setSectionDepth(0.35); // 0.35
+        plot.setCircular(true); // false
+        plot.setLabelGap(0.02);
+        plot.setSectionPaint("TTO", new Color(68,114,195)); 
+        plot.setSectionPaint("Non TTO", new Color(235,124,48)); 
+
+        //plot.setShadowPaint(Color.WHITE);
+        plot.setBaseSectionOutlinePaint(trans);
+        plot.setSectionOutlinesVisible(false);
+        plot.setBaseSectionOutlineStroke(new BasicStroke(2.0f));
+        plot.setSimpleLabels(true);
+        plot.setLegendItemShape(new Rectangle(10,10));
+        
+        plot.setLabelFont(new Font("Arial", Font.BOLD, 14));
+        plot.setLabelOutlineStroke(null);
+        plot.setLabelPaint(Color.DARK_GRAY);
+        plot.setLabelBackgroundPaint(null);
+        plot.setOutlineVisible(false);        
+        plot.setLabelShadowPaint(null);
+        plot.setOuterSeparatorExtension(0);
+        plot.setInnerSeparatorExtension(0);
+        chart.getLegend().setFrame(BlockBorder.NONE);
+        chart.getLegend().setBackgroundPaint(trans);
+        
+        //PieSectionLabelGenerator generator = new StandardPieSectionLabelGenerator("{0}: {1} ({2})");
+        PieSectionLabelGenerator generator = new StandardPieSectionLabelGenerator("{1}",new DecimalFormat("#,##0"), new DecimalFormat("0.000%"));        
+        plot.setLabelGenerator(generator);
+        plot.setLabelBackgroundPaint(trans);        
+        plot.setLabelOutlinePaint(null);
+
+        chart.setBackgroundPaint(trans);
+        plot.setBackgroundPaint(trans);        
+        
+        return chart;        
+                
+/*        JFreeChart pieChart = ChartFactory.createPieChart("", dataset, true, false, false);
+        PiePlot plot = (PiePlot) pieChart.getPlot();
+ 
+        plot.setBackgroundPaint(null);
+        plot.setInteriorGap(0.04);
+        plot.setSectionPaint("TTO", new Color(68,114,195)); 
+        plot.setSectionPaint("Non TTO", new Color(235,124,48)); 
+        plot.setOutlineVisible(false);
+
+        plot.setShadowPaint(Color.WHITE);
+        plot.setBaseSectionOutlinePaint(Color.white);
+        plot.setSectionOutlinesVisible(true);
+        plot.setBaseSectionOutlineStroke(new BasicStroke(2.0f));
+        plot.setSimpleLabels(true);
+        plot.setLegendItemShape(new Rectangle(10,10));
+        
+        plot.setLabelFont(new Font("Arial", Font.BOLD, 14));
+        plot.setLabelOutlineStroke(null);
+        plot.setLabelPaint(Color.WHITE);
+        plot.setLabelBackgroundPaint(null);
+        plot.setLabelShadowPaint(null);
+        pieChart.getLegend().setFrame(BlockBorder.NONE);
+
+        PieSectionLabelGenerator gen = new StandardPieSectionLabelGenerator("{2}", new DecimalFormat("0"), new DecimalFormat("0%")) {
+            @Override
+            public String generateSectionLabel(PieDataset dataset, Comparable key) {
+                if (dataset.getValue(key) == null || dataset.getValue(key).intValue() == 0) {
+                    return null;
+                }
+                return super.generateSectionLabel(dataset, key);
+            }
+        };
+        plot.setLabelGenerator(gen);
+        return pieChart;         */
+    }    
     
     private JFreeChart createPieChart(int mno1Value, int mno2Value, int mno3Value, int mno4Value) {
         
@@ -946,7 +1240,7 @@ public class PDFReportCreator4Mnos {
         plot.setLabelBackgroundPaint(null);
         plot.setLabelShadowPaint(null);
         pieChart.getLegend().setFrame(BlockBorder.NONE);
-
+        
         PieSectionLabelGenerator gen = new StandardPieSectionLabelGenerator("{2}", new DecimalFormat("0"), new DecimalFormat("0%")) {
             @Override
             public String generateSectionLabel(PieDataset dataset, Comparable key) {
@@ -1015,8 +1309,8 @@ public class PDFReportCreator4Mnos {
         if (!bruntwoodOnly) { // used for testing, a custoemr with a small number of sites
             // requested to be changed from this to below by Andy Gillions email 1/5/2019 15:12
             // this causes reports to be generated for all customers, including those with only 1 site and the data within will be duplicated
-            //String customerListSql = "SELECT customer FROM OpenCellCM.Site GROUP BY customer HAVING count(*) > 1";
-            String customerListSql = "SELECT customer FROM OpenCellCM.Site GROUP BY customer";
+            //String customerListSql = "SELECT customer FROM Concert.Site GROUP BY customer HAVING count(*) > 1";
+            String customerListSql = "SELECT customer FROM Concert.Site GROUP BY customer";
             try {
                 ResultSet result = executeQuerySQL(customerListSql);
                 while (result.next()) {
@@ -1042,12 +1336,12 @@ public class PDFReportCreator4Mnos {
         String siteListSql = "";
         //String siteListSql = "Select DISTINCT site_name from metrics.routers ORDER BY site_name";            
         if (!bruntwoodOnly) { // used for testing, a customer with a small number of sites
-            // siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, OpenCellCM.Site where routers.site_name = Site.name ORDER BY site_name;";            
+            // siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, Concert.Site where routers.site_name = Site.name ORDER BY site_name;";            
             // only sites that have a live Femto
-            siteListSql = "Select DISTINCT routers.site_name, Site.customer, Site.id from metrics.routers, OpenCellCM.Site, OpenCellCM.Femto where routers.site_name = Site.name and Femto.site_name = Site.name and Femto.live ORDER BY site_name;";            
+            siteListSql = "Select DISTINCT routers.site_name, Site.customer, Site.id from metrics.routers, Concert.Site, Concert.Femto where routers.site_name = Site.name and Femto.site_name = Site.name and Femto.live ORDER BY site_name;";            
             
         } else {
-            siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, OpenCellCM.Site where routers.site_name = Site.name "
+            siteListSql = "Select DISTINCT site_name, customer, id from metrics.routers, Concert.Site where routers.site_name = Site.name "
                     // + "AND (customer = 'Bruntwood' OR customer = 'Candy & Candy') ORDER BY site_name;";            
                     // + "AND (customer = 'Village Hotel') ORDER BY site_name;";            
                     + "AND name = 'The Frames' ORDER BY site_name;";            
@@ -1076,7 +1370,7 @@ public class PDFReportCreator4Mnos {
      * @param sql
      * @throws Exception 
      */
-    private void executeUpdateSQL(String[] sql) throws Exception {
+    public void executeUpdateSQL(String[] sql) throws Exception {
         int ret = -1;            
         try {
             //if (sql.length > 1) { // How did this work before
@@ -1089,25 +1383,23 @@ public class PDFReportCreator4Mnos {
                 stmt.executeBatch();
             }
         } catch(SQLException se){
-           //Handle errors for JDBC
-           System.out.println(se.getMessage());
+           //System.out.println("Error executing Update SQL: " + se.getMessage());
            se.printStackTrace();
         } catch(Exception e){
-           //Handle errors for Class.forName
-           System.out.println(e.getMessage());
+           //System.out.println("Error executing Update SQL: " + e.getMessage());
            e.printStackTrace();
         }
     }
     
-    private ResultSet executeQuerySQL(String sql) throws Exception {
+    public ResultSet executeQuerySQL(String sql) throws Exception {
         ResultSet rs = null;      
         try {
            rs = stmt.executeQuery(sql);            
         } catch(SQLException se){
-           //Handle errors for JDBC
+           System.out.println("Error executing Query SQL: " + se.getMessage());
            se.printStackTrace();
         } catch(Exception e){
-           //Handle errors for Class.forName
+           System.out.println("Error executing Query SQL: " + e.getMessage());
            e.printStackTrace();
         }
         return rs;

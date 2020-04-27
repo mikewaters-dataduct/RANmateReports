@@ -85,8 +85,8 @@ public class PdfServiceReportGenerator {
             pageCounter = nonTtoSitesStatusSlide.createSitesStatusSlide(openCellDocument, fontCG, fontCGBold, pageCounter);
 
             PdfServiceReportIncidentLog incidentLogSlide;
-            incidentLogSlide = new PdfServiceReportIncidentLog();
-            incidentLogSlide.createIncidentLogSlide(openCellDocument, fontCG, pageCounter);
+            incidentLogSlide = new PdfServiceReportIncidentLog(creator);
+            incidentLogSlide.createIncidentLogSlide(openCellDocument, fontCG, fontCGBold, pageCounter);
             pageCounter ++;
 
             PdfServiceReportSitesInPlay sitesInPlaySlide;
@@ -95,12 +95,13 @@ public class PdfServiceReportGenerator {
 
             PdfServiceReportOverallStats overallStatsSlide;
             overallStatsSlide = new PdfServiceReportOverallStats(creator);
+            // FINAL slide - the dodgy one
             pageCounter = overallStatsSlide.createOverallStatsSlide(openCellDocument, fontCG, fontCGBold, pageCounter, coveringPeriod);
 
             //Content of all pages created, Add Background, Header and Footer as per the provided template
             HashMap<Integer, String> overlayGuide = new HashMap<Integer, String>();
             for(int i=0; i<openCellDocument.getNumberOfPages(); i++){
-                //overlayGuide.put(i+1, PdfServiceReportConfig.REPORT_DIR + PdfServiceReportConfig.templateName);
+                //overlayGuide.put(i+1, PdfServiceReportConfig.REPORT_DIR + PdfServiceReportConfig.templateName); // old version
                 overlayGuide.put(i+1, creator.REPORT_TEMPLATE_DIR + PdfServiceReportConfig.templateName);
             }
 

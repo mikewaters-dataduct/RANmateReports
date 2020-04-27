@@ -7,10 +7,6 @@ import be.quodlibet.boxable.Row;
 import be.quodlibet.boxable.VerticalAlignment;
 import be.quodlibet.boxable.line.LineStyle;
 import com.dataduct.invobroker.ranmatereports.PDFReportCreator4Mnos;
-import com.dataduct.invobroker.ranmatereports.servicereports.PdfServiceReportCommon;
-import com.dataduct.invobroker.ranmatereports.servicereports.PdfServiceReportConfig;
-import com.dataduct.invobroker.ranmatereports.servicereports.PdfServiceReportDataCollector;
-import com.dataduct.invobroker.ranmatereports.servicereports.SiteStatus;
 import java.awt.Color;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -36,29 +32,30 @@ public class PdfServiceReportSitesStatus {
         creator = theCreator;
         this.isTto = isTto;
     }
-    
+
     public int createSitesStatusSlide(PDDocument openCellDocument, PDFont fontCG, PDFont fontCGBold, int globalPageCounter){
         int noPages;
         int rowsPerPage;
         String title1;
         String title2;
         String title3;
-        
+
         if (isTto) {
-            //rowsPerPage = 7;
+            // rowsPerPage = 7;
             title1 = "TTO";
             title2 = "Failing TTO/consistent offending sites this month";
             title3 = "Failing sites last month with actions/past 4 weeks";
         } else {
-            //rowsPerPage = 11;
+            // rowsPerPage = 11;
             title1 = "Non-TTO";
             title2 = "Actions for Non-TTO sites";
             title3 = "Failing Non-TTO sites";
         }
-        rowsPerPage = 14;       // was previously 10
+        rowsPerPage = 10;
         
         PdfServiceReportDataCollector pdfReportDataCollector = new PdfServiceReportDataCollector(creator);
         SiteStatus[] sitesStatus = pdfReportDataCollector.getSiteStatus( isTto);
+
         
         if ( sitesStatus.length % rowsPerPage == 0 ) {
             noPages = sitesStatus.length/rowsPerPage;
@@ -149,8 +146,8 @@ public class PdfServiceReportSitesStatus {
             }
         }
         return noPages + globalPageCounter;
-    }  
-    
+    }
+
     private boolean addHeader2ToTable(Row<PDPage> row, Cell<PDPage> cell, PDFont fontCG) {
         int nonTtoOffset;
         /*if (isTto) {
@@ -187,7 +184,7 @@ public class PdfServiceReportSitesStatus {
             cell.setRightBorderStyle(new LineStyle(Color.WHITE, 1));
             cell.setBottomBorderStyle(new LineStyle(Color.WHITE, 3));
 
-            cell = row.createCell(32 + nonTtoOffset, "Comments"); // was 51 (%) previously 
+            cell = row.createCell(51 + nonTtoOffset, "Comments");
             cell.setFontBold(fontCG);
             cell.setFontSize(10);
             cell.setTextColor(Color.WHITE);
@@ -209,7 +206,7 @@ public class PdfServiceReportSitesStatus {
                 cell.setRightBorderStyle(new LineStyle(Color.WHITE, 1));
                 cell.setBottomBorderStyle(new LineStyle(Color.WHITE, 3));
             }*/
-            cell = row.createCell(46, "Next Action");
+            cell = row.createCell(27, "Next Action");
             cell.setFontBold(fontCG);
             cell.setFontSize(10);
             cell.setTextColor(Color.WHITE);
@@ -263,8 +260,8 @@ public class PdfServiceReportSitesStatus {
             cell.setRightBorderStyle(new LineStyle(Color.WHITE, 1));
             cell.setTopPadding(2);
             cell.setBottomPadding(1);
- 
-            cell = row.createCell(32 + nonTtoOffset, rowContent.comments);
+
+            cell = row.createCell(51 + nonTtoOffset, rowContent.comments);
             cell.setFont(fontCG);
             cell.setFontSize(10);
             cell.setTextColor(PdfServiceReportConfig.openCellFontGrey);
@@ -289,7 +286,7 @@ public class PdfServiceReportSitesStatus {
                 cell.setBottomPadding(1);
             }*/
             
-            cell = row.createCell(46, rowContent.nextStep);
+            cell = row.createCell(27, rowContent.nextStep);
             cell.setFont(fontCG);
             cell.setFontSize(10);
             cell.setFillColor(rowColor);

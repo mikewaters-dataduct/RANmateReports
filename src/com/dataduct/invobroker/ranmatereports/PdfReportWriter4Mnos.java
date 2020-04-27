@@ -121,23 +121,23 @@ public class PdfReportWriter4Mnos {
             //OpenCell Report
             openCellDocument = new PDDocument();
             //Century Gothic font
-            fontCG = PDTrueTypeFont.loadTTF(openCellDocument, new File(PDFReportCreator.REPORT_TEMPLATE_DIR + "century"));
+            fontCG = PDTrueTypeFont.loadTTF(openCellDocument, new File(PDFReportCreator4Mnos.REPORT_TEMPLATE_DIR + "century"));
             imagesDir = "";
             if (custom) {
-                imagesDir = PDFReportCreator.CUSTOM_REPORT_DIR + subjectName + "/";                
+                imagesDir = PDFReportCreator4Mnos.CUSTOM_REPORT_DIR + subjectName + "/";                
             } else {
                 switch(subject) {
                     case SITE:
-                        imagesDir = PDFReportCreator.SITE_REPORT_DIR + subjectName + "/";
+                        imagesDir = PDFReportCreator4Mnos.SITE_REPORT_DIR + subjectName + "/";
                         break;
                     case CUSTOMER:
-                        imagesDir = PDFReportCreator.CUSTOMER_REPORT_DIR + subjectName + "/";
+                        imagesDir = PDFReportCreator4Mnos.CUSTOMER_REPORT_DIR + subjectName + "/";
                         break;
                     case OPERATOR:
-                        imagesDir = PDFReportCreator.MNO_REPORT_DIR + subjectName + "/";
+                        imagesDir = PDFReportCreator4Mnos.MNO_REPORT_DIR + subjectName + "/";
                         break;
                     default:
-                        imagesDir = PDFReportCreator.REPORT_DIR + "sites/" + subjectName + "/";
+                        imagesDir = PDFReportCreator4Mnos.REPORT_DIR + "sites/" + subjectName + "/";
                 }
             }
 
@@ -535,7 +535,7 @@ public class PdfReportWriter4Mnos {
             finalPage.endText();       
             
             //drawImage 1 - Bar Chart
-            PDImageXObject imageBar6 = PDImageXObject.createFromFile(PDFReportCreator.REPORT_TEMPLATE_DIR + "StrattoOpencellContact.png", openCellDocument);
+            PDImageXObject imageBar6 = PDImageXObject.createFromFile(PDFReportCreator4Mnos.REPORT_TEMPLATE_DIR + "StrattoOpencellContact.png", openCellDocument);
             // finalPage.drawImage(imageBar6, 65, 43, imageBar6.getWidth()*(0.75f), imageBar6.getHeight()*(0.75f));     // before OC-87
             finalPage.drawImage(imageBar6, 65, 43, imageBar6.getWidth()*(0.28f), imageBar6.getHeight()*(0.28f));    
             
@@ -561,7 +561,7 @@ public class PdfReportWriter4Mnos {
             //Background, Header, Footer
             HashMap<Integer, String> overlayGuide = new HashMap<Integer, String>();
             for(int i=0; i<openCellDocument.getNumberOfPages(); i++){
-                overlayGuide.put(i+1, PDFReportCreator.REPORT_TEMPLATE_DIR + "OpenCellPageTemplate.pdf");
+                overlayGuide.put(i+1, PDFReportCreator4Mnos.REPORT_TEMPLATE_DIR + "OpenCellPageTemplate.pdf");
             }
         
             overlay = new Overlay();

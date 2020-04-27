@@ -8,6 +8,7 @@ import be.quodlibet.boxable.VerticalAlignment;
 import be.quodlibet.boxable.line.LineStyle;
 import com.dataduct.invobroker.ranmatereports.PDFReportCreator4Mnos;
 import java.awt.Color;
+import java.util.HashMap;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -125,6 +126,7 @@ public class PdfServiceReportSitesPerformance {
                     if (isTto){
                         addCellToTableRow(row, cell, 24, sitesPerformance[i].concessionReason, fontCG, new Color(204, 233, 173), true);
                     }
+                    calculateSiteOverallRedOrGreen(sitesPerformance[i]);
                 }
 
                 if ((pageCounter == noPages -1) && !isTto) {
@@ -177,6 +179,30 @@ public class PdfServiceReportSitesPerformance {
         }
         return (totalPageCounter + noPages);
     }
+
+    private void calculateSiteOverallRedOrGreen(SitePerformance perf) {
+
+        String siteName = perf.siteName;
+        if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.cellAvailabilityTarget, Double.toString(perf.cellAvailability)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.rrcSRTarget, Double.toString(perf.rrcSR)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.csSRTarget, Double.toString(perf.csSR)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.csDCRTarget, Double.toString(perf.csDCR)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.psSRTarget, Double.toString(perf.psSR)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.psDSRTarget, Double.toString(perf.psDSR)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.interFapCSTarget, Double.toString(perf.interFapCS)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else if (PdfServiceReportCommon.getRedOrGreen(PdfServiceReportConfig.interFapPSTarget, Double.toString(perf.interFapPS)).equals(PdfServiceReportConfig.statusRed))
+            creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusRed);
+        else creator.overallSiteColour.put(siteName,PdfServiceReportConfig.statusGreen);    
+        //System.out.println("Overall Status colour for " + siteName + " set to " + creator.overallSiteColour.get(siteName).toString());
+    }
+    
     private boolean addCellToHeaderRow(Row<PDPage> headerRow, Cell<PDPage> cell, int cellWidth, String text, PDFont fontCG){
         try {
             cell = headerRow.createCell(cellWidth, text);

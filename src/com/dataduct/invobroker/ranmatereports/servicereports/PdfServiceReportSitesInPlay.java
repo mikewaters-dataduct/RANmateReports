@@ -40,8 +40,8 @@ public class PdfServiceReportSitesInPlay {
         String[] pendingDASites = pdfReportDataCollector.getPendingDesignSites();
         String[] latestTtoSites = pdfReportDataCollector.getLatestTtoSites(true);
 
-        int maxRows = Math.max(upcomingSites.length, (pendingDASites.length + latestTtoSites.length + 1)); // updated 17/4/2020 by ZAW after SOC concall with Andy and John
-        //int maxRows = Math.max(upcomingSites.length, pendingDASites.length);
+        //int maxRows = Math.max(upcomingSites.length, (pendingDASites.length + latestTtoSites.length + 1)); // updated 17/4/2020 by ZAW after SOC concall with Andy and John
+        int maxRows = Math.max(upcomingSites.length, pendingDASites.length);
         
         if ( maxRows % rowsPerPage == 0 ) {
             noPages = maxRows/rowsPerPage;
@@ -51,7 +51,7 @@ public class PdfServiceReportSitesInPlay {
 
         boolean allUCSitesPrinted = false;
         boolean allPDSitesPrinted = false;
-        boolean allLTSitesPrinted = false; // previously false; // updated 17/4/2020 by ZAW after SOC concall with Andy and John
+        boolean allLTSitesPrinted = true; // previously false; // updated 17/4/2020 by ZAW after SOC concall with Andy and John
         int rawsTaken = 0;
 
 
